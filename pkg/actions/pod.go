@@ -10,7 +10,7 @@ import (
 )
 
 func DeletePod(
-	client *kubernetes.Clientset,
+	client kubernetes.Interface,
 	namespace string,
 	name string,
 ) error {
@@ -25,7 +25,7 @@ func DeletePod(
 }
 
 func RestartPod(
-	client *kubernetes.Clientset,
+	client kubernetes.Interface,
 	namespace string,
 	name string,
 ) error {
@@ -35,7 +35,7 @@ func RestartPod(
 }
 
 func DescribePod(
-	client *kubernetes.Clientset,
+	client kubernetes.Interface,
 	namespace string,
 	name string,
 ) (*corev1.Pod, error) {

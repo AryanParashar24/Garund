@@ -61,7 +61,7 @@ export function Dashboard({
     
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
-        // header
+        {/* Header */}
         {<header className="border-b border-zinc-800 bg-zinc-950">
             <div className="flex items-center justify-between px-8 py-5">
 
@@ -93,7 +93,7 @@ export function Dashboard({
             </div>
         </header>}
 
-        //stats
+        {/* Stats */}
         {<section className="px-8 py-6">
             <div className="grid grid-cols-5 gap-4">
                 <StatCard label="Pods" value={overview.pods} />
@@ -104,7 +104,7 @@ export function Dashboard({
             </div>
         </section>}
 
-        // topology
+        {/* Topology */}
         {<section className="px-8 pb-8">
             <div className="
                 overflow-hidden
@@ -145,4 +145,3 @@ export function Dashboard({
     </main>
   )
 }
-

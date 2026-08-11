@@ -7,7 +7,7 @@ export interface SLI {
   name: string
   type: SLIType
 
-  value: number
+  value: number | null
   target: number
 
   unit: string
@@ -36,7 +36,7 @@ export interface SLO {
 
   sliType: SLIType
 
-  current: number
+  current: number | null
 
   errorBudget: number
   errorBudgetRemaining: number
@@ -54,7 +54,7 @@ export interface SLA {
   namespace: string
 
   availabilityTarget?: number
-  latencyTarget?: number
+  latencyTargetMs?: number
 
   window: string
 

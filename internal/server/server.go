@@ -14,6 +14,8 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 
+	"github.com/garund/garund/internal/agent"
+	k8s "github.com/garund/garund/internal/kubernetes"
 	"github.com/garund/garund/pkg/actions"
 	analyzer "github.com/garund/garund/pkg/analyzer"
 	utils "github.com/garund/garund/pkg/utils"
@@ -584,6 +586,25 @@ func serviceIsHealthy(
 	return false
 }
 
+func getClientForRequest(c *gin.Context, fallbackClientset kubernetes.Interface) (kubernetes.Interface, *k8s.ClusterConnection) {
+	clusterID := c.Param("id")
+	if clusterID == "" {
+		clusterID = c.Query("cluster")
+	}
+	cm := k8s.GetManager()
+	if clusterID == "" {
+		clusterID = cm.GetActiveClusterID()
+	}
+
+	client, err := cm.GetClient(clusterID)
+	if err != nil || client == nil {
+		client = fallbackClientset
+	}
+
+	conn, _ := cm.GetCluster(clusterID)
+	return client, conn
+}
+
 // Run starts the Garund API server and blocks until shutdown.
 func Run(opts Options) error {
 	if opts.Addr == "" {
@@ -656,6 +677,166 @@ func Run(opts Options) error {
 			log.Printf("metric provider shutdown: %v", err)
 		}
 	}()
+
+	// Auto-discover local context and initialize ClusterManager
+	if err := k8s.AutoDiscoverLocalContexts(kubeconfig); err != nil {
+		log.Printf("Local context discovery warning: %v", err)
+	}
+
+	// Cluster management endpoints
+	router.GET("/api/clusters", func(c *gin.Context) {
+		cm := k8s.GetManager()
+		clusters := cm.ListClusters()
+		c.JSON(http.StatusOK, gin.H{
+			"activeId": cm.GetActiveClusterID(),
+			"clusters": clusters,
+		})
+	})
+
+	router.POST("/api/clusters", func(c *gin.Context) {
+		type CreateClusterReq struct {
+			Name           string `json:"name"`
+			Environment    string `json:"environment"`
+			Provider       string `json:"provider"`
+			ClusterType    string `json:"clusterType"`
+			ConnectionMode string `json:"connectionMode"`
+			Endpoint       string `json:"endpoint"`
+			BearerToken    string `json:"bearerToken"`
+		}
+
+		var req CreateClusterReq
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		cm := k8s.GetManager()
+		id := fmt.Sprintf("cluster-%d", time.Now().UnixNano()%1000000)
+		agentToken := fmt.Sprintf("gtok_%d", time.Now().UnixNano())
+
+		mode := k8s.ModeAgent
+		if req.ConnectionMode == string(k8s.ModeServiceAccountToken) {
+			mode = k8s.ModeServiceAccountToken
+		} else if req.ConnectionMode == string(k8s.ModeLocalKubeconfig) {
+			mode = k8s.ModeLocalKubeconfig
+		}
+
+		conn := &k8s.ClusterConnection{
+			ID:                id,
+			Name:              req.Name,
+			Environment:       req.Environment,
+			Provider:          req.Provider,
+			ClusterType:       req.ClusterType,
+			ConnectionMode:    mode,
+			Status:            k8s.StatusDisconnected,
+			Endpoint:          req.Endpoint,
+			KubernetesVersion: "v1.32.0",
+			AgentToken:        agentToken,
+			Capabilities: k8s.CapabilitySet{
+				CanReadWorkloads:    true,
+				CanReadLogs:         true,
+				CanReadEvents:       true,
+				CanReadTelemetry:    true,
+				CanOperateWorkloads: true,
+				CanAdminister:       true,
+			},
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+
+		var client kubernetes.Interface
+		if mode == k8s.ModeServiceAccountToken && req.Endpoint != "" && req.BearerToken != "" {
+			var err error
+			client, err = k8s.BuildClientFromToken(req.Endpoint, req.BearerToken, nil)
+			if err == nil {
+				conn.Status = k8s.StatusConnected
+			} else {
+				conn.Status = k8s.StatusAuthError
+			}
+		}
+
+		agent.GetAgentRegistry().RegisterToken(id, agentToken)
+		cm.RegisterCluster(conn, client)
+
+		c.JSON(http.StatusCreated, gin.H{
+			"cluster":    conn,
+			"agentToken": agentToken,
+		})
+	})
+
+	router.GET("/api/clusters/:id", func(c *gin.Context) {
+		id := c.Param("id")
+		conn, exists := k8s.GetManager().GetCluster(id)
+		if !exists {
+			c.JSON(http.StatusNotFound, gin.H{"error": "cluster not found"})
+			return
+		}
+		c.JSON(http.StatusOK, conn)
+	})
+
+	router.DELETE("/api/clusters/:id", func(c *gin.Context) {
+		id := c.Param("id")
+		if err := k8s.GetManager().DeleteCluster(id); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "cluster connection removed"})
+	})
+
+	router.POST("/api/clusters/switch", func(c *gin.Context) {
+		type SwitchReq struct {
+			ClusterID string `json:"clusterId"`
+		}
+		var req SwitchReq
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		if err := k8s.GetManager().SetActiveCluster(req.ClusterID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"activeId": req.ClusterID})
+	})
+
+	router.GET("/api/clusters/:id/status", func(c *gin.Context) {
+		id := c.Param("id")
+		conn, exists := k8s.GetManager().GetCluster(id)
+		if !exists {
+			c.JSON(http.StatusNotFound, gin.H{"error": "cluster not found"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"id":                conn.ID,
+			"name":              conn.Name,
+			"status":            conn.Status,
+			"kubernetesVersion": conn.KubernetesVersion,
+			"nodeCount":         conn.NodeCount,
+			"namespaceCount":    conn.NamespaceCount,
+			"latencyMs":         conn.LatencyMs,
+			"lastHeartbeat":     conn.LastHeartbeat,
+			"capabilities":      conn.Capabilities,
+		})
+	})
+
+	router.GET("/api/clusters/:id/manifest", func(c *gin.Context) {
+		id := c.Param("id")
+		conn, exists := k8s.GetManager().GetCluster(id)
+		if !exists {
+			c.JSON(http.StatusNotFound, gin.H{"error": "cluster not found"})
+			return
+		}
+		serverURL := fmt.Sprintf("http://%s", c.Request.Host)
+		manifest := agent.GenerateAgentRBACManifest(id, serverURL, conn.AgentToken)
+		c.JSON(http.StatusOK, gin.H{
+			"clusterId": id,
+			"manifest":  manifest,
+			"command":   fmt.Sprintf("kubectl apply -f - <<'EOF'\n%s\nEOF", manifest),
+		})
+	})
+
+	router.GET("/api/clusters/:id/agent/ws", agent.HandleAgentWebSocket)
 
 	registerReliabilityRoutes(
 		router,
@@ -1468,11 +1649,7 @@ func Run(opts Options) error {
 				restarts += container.RestartCount
 			}
 
-			health := "healthy"
-
-			if !podIsHealthy(pod) {
-				health = "critical"
-			}
+			health := podHealth(pod)
 
 			nodes = append(nodes, gin.H{
 				"id":   "pod-" + pod.Namespace + "-" + pod.Name,
@@ -2300,6 +2477,7 @@ func Run(opts Options) error {
 	router.GET("/resource-events", func(c *gin.Context) {
 		namespace := c.Query("namespace")
 		name := c.Query("name")
+		kind := c.Query("kind")
 
 		if namespace == "" || name == "" {
 			c.JSON(http.StatusBadRequest, gin.H{
@@ -2308,12 +2486,17 @@ func Run(opts Options) error {
 			return
 		}
 
+		selector := "involvedObject.name=" + name
+		if kind != "" {
+			selector += ",involvedObject.kind=" + kind
+		}
+
 		events, err := clientset.CoreV1().
 			Events(namespace).
 			List(
 				c.Request.Context(),
 				metav1.ListOptions{
-					FieldSelector: "involvedObject.name=" + name,
+					FieldSelector: selector,
 				},
 			)
 
@@ -2327,11 +2510,26 @@ func Run(opts Options) error {
 		data := make([]gin.H, 0)
 
 		for _, event := range events.Items {
+			eventTime := event.EventTime.Time
+			if eventTime.IsZero() {
+				eventTime = event.LastTimestamp.Time
+			}
+			if eventTime.IsZero() {
+				eventTime = event.FirstTimestamp.Time
+			}
 			data = append(data, gin.H{
-				"type":    event.Type,
-				"reason":  event.Reason,
-				"message": event.Message,
-				"count":   event.Count,
+				"uid":       event.UID,
+				"type":      event.Type,
+				"reason":    event.Reason,
+				"message":   event.Message,
+				"count":     event.Count,
+				"namespace": event.Namespace,
+				"eventTime": eventTime,
+				"involvedObject": gin.H{
+					"kind":      event.InvolvedObject.Kind,
+					"name":      event.InvolvedObject.Name,
+					"namespace": event.InvolvedObject.Namespace,
+				},
 			})
 		}
 
@@ -2528,8 +2726,16 @@ func Run(opts Options) error {
 			return
 		}
 
+		client, conn := getClientForRequest(c, clientset)
+		if conn != nil && !conn.Capabilities.CanOperateWorkloads {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "Connected identity does not have permission to operate workloads on this cluster",
+			})
+			return
+		}
+
 		err := actions.RestartPod(
-			clientset,
+			client,
 			req.Namespace,
 			req.Name,
 		)
@@ -2561,8 +2767,16 @@ func Run(opts Options) error {
 			return
 		}
 
+		client, conn := getClientForRequest(c, clientset)
+		if conn != nil && !conn.Capabilities.CanOperateWorkloads {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "Connected identity does not have permission to operate workloads on this cluster",
+			})
+			return
+		}
+
 		err := actions.DeletePod(
-			clientset,
+			client,
 			namespace,
 			name,
 		)

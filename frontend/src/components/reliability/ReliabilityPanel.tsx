@@ -10,11 +10,13 @@ import {
 interface ReliabilityPanelProps {
   namespace?: string
   service?: string
+  clusterId?: string
 }
 
 export function ReliabilityPanel({
   namespace = "",
   service = "",
+  clusterId = "",
 }: ReliabilityPanelProps) {
   const [
     reliability,
@@ -33,7 +35,8 @@ export function ReliabilityPanel({
 
         const data = await getReliability(
           namespace,
-          service
+          service,
+          clusterId
         )
 
         if (!cancelled) {
@@ -56,7 +59,7 @@ export function ReliabilityPanel({
     return () => {
       cancelled = true
     }
-  }, [namespace, service])
+  }, [namespace, service, clusterId])
 
   if (loading) {
     return (
@@ -186,7 +189,7 @@ export function ReliabilityPanel({
                       ${statusClass}
                     `}
                   >
-                    {sli.value !== null
+                    {typeof sli.value === "number"
                       ? sli.value.toFixed(2)
                       : "N/A"}
                   </span>
@@ -440,7 +443,7 @@ export function ReliabilityPanel({
           ">
             Latency commitment{" "}
             {reliability.sla
-              .latencyTarget}
+              .latencyTargetMs ?? "N/A"}
             ms
           </div>
 

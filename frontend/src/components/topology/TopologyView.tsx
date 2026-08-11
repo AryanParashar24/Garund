@@ -27,7 +27,7 @@ import { useClusterWatch } from "@/hooks/useClusterWatch"
 import { ResourceNode } from "./ResourceNode"
 import { ResourceDetails } from "./ResourceDetails"
 
-import { getResource } from "@/lib/api"
+import { getResource, getResourceEvents } from "@/lib/api"
 import { apiUrl } from "@/lib/config"
 
 import { SearchResult } from "@/components/search/types"
@@ -48,6 +48,7 @@ interface TopologyViewProps {
   namespace?: string
   search?: string
   selectedSearchResource?: SearchResult | null
+  clusterId?: string
 }
 
 const nodeTypes = {
@@ -61,6 +62,7 @@ export function TopologyView({
   namespace = "",
   search = "",
   selectedSearchResource = null,
+  clusterId = "",
 }: TopologyViewProps) {
   const [
     nodes,
@@ -99,9 +101,13 @@ export function TopologyView({
       try {
         setLoading(true)
 
+        const queryParams = new URLSearchParams()
+        if (namespace) queryParams.set("namespace", namespace)
+        if (clusterId) queryParams.set("cluster", clusterId)
+
         const response =
           await fetch(
-            apiUrl(`/topology?namespace=${encodeURIComponent(namespace)}`)
+            apiUrl(`/topology?${queryParams.toString()}`)
           )
 
         if (!response.ok) {
@@ -143,6 +149,7 @@ export function TopologyView({
     }
   }, [
     namespace,
+    clusterId,
     setNodes,
     setEdges,
   ])
@@ -302,14 +309,12 @@ export function TopologyView({
     try {
       setResourceLoading(true)
 
-      const resource =
-        await getResource(
-          kind,
-          resourceNamespace,
-          name
-        )
+      const [resource, events] = await Promise.all([
+        getResource(kind, resourceNamespace, name, clusterId),
+        getResourceEvents(resourceNamespace, name, kind, clusterId),
+      ])
 
-      setSelectedResource(resource)
+      setSelectedResource({ ...resource, events })
     } catch (error) {
       console.error(
         "Resource fetch failed:",

@@ -7,7 +7,18 @@ import { ServiceTable } from "@/components/dashboard/ServiceTable"
 import { EventsTable } from "@/components/dashboard/EventsTable"
 import { ResourceDetails } from "@/components/topology/ResourceDetails"
 
-import { getResource } from "@/lib/api"
+import {
+  getResource,
+  getResourceEvents,
+  ResourceEvent,
+} from "@/lib/api"
+import { Pod } from "@/types/k8s"
+
+interface Service {
+  name: string
+  namespace: string
+  type: string
+}
 
 interface ResourceSelection {
   kind: string
@@ -16,9 +27,9 @@ interface ResourceSelection {
 }
 
 interface ResourceTablesProps {
-  pods: any[]
-  services: any[]
-  events: any[]
+  pods: Pod[]
+  services: Service[]
+  events: ResourceEvent[]
 }
 
 export function ResourceTables({
@@ -29,12 +40,7 @@ export function ResourceTables({
   const [
     selectedResource,
     setSelectedResource,
-  ] = useState<any | null>(null)
-
-  const [
-    selectedResourceInfo,
-    setSelectedResourceInfo,
-  ] = useState<ResourceSelection | null>(null)
+  ] = useState<Record<string, unknown> | null>(null)
 
   const [loading, setLoading] =
     useState(false)
@@ -45,15 +51,12 @@ export function ResourceTables({
     try {
       setLoading(true)
 
-      setSelectedResourceInfo(resource)
+      const [data, events] = await Promise.all([
+        getResource(resource.kind, resource.namespace, resource.name),
+        getResourceEvents(resource.namespace, resource.name, resource.kind),
+      ])
 
-      const data = await getResource(
-        resource.kind,
-        resource.namespace,
-        resource.name
-      )
-
-      setSelectedResource(data)
+      setSelectedResource({ ...data, events })
     } catch (error) {
       console.error(
         "Failed to load resource:",
@@ -68,7 +71,6 @@ export function ResourceTables({
 
   function handleClose() {
     setSelectedResource(null)
-    setSelectedResourceInfo(null)
   }
 
   return (

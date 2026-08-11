@@ -544,6 +544,19 @@ export function ResourceDetails({
                                 Count: {event.count}
                               </div>
                             )}
+
+                            <div className="mt-2 text-[11px] text-zinc-600">
+                              {event.eventTime && (
+                                <div>
+                                  {formatDate(event.eventTime)}
+                                </div>
+                              )}
+                              <div>
+                                {event.namespace || namespace}
+                                {event.involvedObject?.kind &&
+                                  ` · ${event.involvedObject.kind}/${event.involvedObject.name}`}
+                              </div>
+                            </div>
                           </div>
                         )
                       }

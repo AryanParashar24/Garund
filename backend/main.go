@@ -1466,11 +1466,7 @@ func main() {
 				restarts += container.RestartCount
 			}
 
-			health := "healthy"
-
-			if !podIsHealthy(pod) {
-				health = "critical"
-			}
+			health := podHealth(pod)
 
 			nodes = append(nodes, gin.H{
 				"id":   "pod-" + pod.Namespace + "-" + pod.Name,
@@ -2298,6 +2294,7 @@ func main() {
 	router.GET("/resource-events", func(c *gin.Context) {
 		namespace := c.Query("namespace")
 		name := c.Query("name")
+		kind := c.Query("kind")
 
 		if namespace == "" || name == "" {
 			c.JSON(http.StatusBadRequest, gin.H{
@@ -2306,12 +2303,17 @@ func main() {
 			return
 		}
 
+		selector := "involvedObject.name=" + name
+		if kind != "" {
+			selector += ",involvedObject.kind=" + kind
+		}
+
 		events, err := clientset.CoreV1().
 			Events(namespace).
 			List(
 				c.Request.Context(),
 				metav1.ListOptions{
-					FieldSelector: "involvedObject.name=" + name,
+					FieldSelector: selector,
 				},
 			)
 
@@ -2325,11 +2327,26 @@ func main() {
 		data := make([]gin.H, 0)
 
 		for _, event := range events.Items {
+			eventTime := event.EventTime.Time
+			if eventTime.IsZero() {
+				eventTime = event.LastTimestamp.Time
+			}
+			if eventTime.IsZero() {
+				eventTime = event.FirstTimestamp.Time
+			}
 			data = append(data, gin.H{
-				"type":    event.Type,
-				"reason":  event.Reason,
-				"message": event.Message,
-				"count":   event.Count,
+				"uid":       event.UID,
+				"type":      event.Type,
+				"reason":    event.Reason,
+				"message":   event.Message,
+				"count":     event.Count,
+				"namespace": event.Namespace,
+				"eventTime": eventTime,
+				"involvedObject": gin.H{
+					"kind":      event.InvolvedObject.Kind,
+					"name":      event.InvolvedObject.Name,
+					"namespace": event.InvolvedObject.Namespace,
+				},
 			})
 		}
 
