@@ -509,6 +509,18 @@ func (s *ReliabilityStore) SaveDestination(item NotificationDestination) Notific
 	return item
 }
 
+func (s *ReliabilityStore) DeleteDestination(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.data.Destinations[id]; ok {
+		delete(s.data.Destinations, id)
+		_ = s.saveLocked()
+		return true
+	}
+	return false
+}
+
 // Config per cluster
 func (s *ReliabilityStore) GetPrometheusURL(clusterID string) string {
 	s.mu.RLock()

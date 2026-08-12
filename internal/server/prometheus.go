@@ -377,3 +377,156 @@ func (p *PrometheusClient) Series(matchers []string) (int, error) {
 
 	return len(apiResp.Data), nil
 }
+
+func (p *PrometheusClient) Readiness(ctx context.Context) (bool, error) {
+	if ctx == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+	}
+
+	reqURL := fmt.Sprintf("%s/-/ready", p.BaseURL)
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	if err != nil {
+		return false, err
+	}
+
+	resp, err := p.Client.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode == http.StatusOK, nil
+}
+
+func (p *PrometheusClient) Metadata(ctx context.Context, metric string) (map[string]interface{}, error) {
+	if ctx == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+	}
+
+	endpoint, err := url.Parse(p.BaseURL + "/api/v1/metadata")
+	if err != nil {
+		return nil, err
+	}
+
+	if metric != "" {
+		params := endpoint.Query()
+		params.Set("metric", metric)
+		endpoint.RawQuery = params.Encode()
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := p.Client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var apiResp struct {
+		Status string                 `json:"status"`
+		Data   map[string]interface{} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, err
+	}
+
+	return apiResp.Data, nil
+}
+
+func (p *PrometheusClient) Rules(ctx context.Context) (interface{}, error) {
+	if ctx == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+	}
+
+	reqURL := fmt.Sprintf("%s/api/v1/rules", p.BaseURL)
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := p.Client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var apiResp struct {
+		Status string      `json:"status"`
+		Data   interface{} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, err
+	}
+
+	return apiResp.Data, nil
+}
+
+func (p *PrometheusClient) Alerts(ctx context.Context) (interface{}, error) {
+	if ctx == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+	}
+
+	reqURL := fmt.Sprintf("%s/api/v1/alerts", p.BaseURL)
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := p.Client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var apiResp struct {
+		Status string      `json:"status"`
+		Data   interface{} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, err
+	}
+
+	return apiResp.Data, nil
+}
+
+func (p *PrometheusClient) Targets(ctx context.Context) (interface{}, error) {
+	if ctx == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+	}
+
+	reqURL := fmt.Sprintf("%s/api/v1/targets", p.BaseURL)
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := p.Client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var apiResp struct {
+		Status string      `json:"status"`
+		Data   interface{} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, err
+	}
+
+	return apiResp.Data, nil
+}
+

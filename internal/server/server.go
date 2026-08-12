@@ -826,8 +826,6 @@ func Run(opts Options) error {
 
 	router.GET("/api/clusters/:id/agent/ws", agent.HandleAgentWebSocket)
 
-	RegisterReliabilityRoutes(router)
-
 	router.GET("/pods", func(c *gin.Context) {
 
 		namespace := c.Query("namespace")

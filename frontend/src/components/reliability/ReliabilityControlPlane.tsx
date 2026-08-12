@@ -25,6 +25,7 @@ import {
   createAlertPolicy,
   getAlertPolicies,
   deleteAlertPolicy,
+  testAlertPolicy,
   updatePrometheusConfig,
 } from "@/lib/api"
 import { GuidedSLIModal } from "./GuidedSLIModal"
@@ -94,20 +95,23 @@ export function ReliabilityControlPlane({
   const [policyThreshold, setPolicyThreshold] = useState(2.0)
   const [policySeverity, setPolicySeverity] = useState<"P1" | "P2" | "P3">("P1")
 
+  const [activeAlertsList, setActiveAlertsList] = useState<GarundAlert[]>([])
   const [promUrlInput, setPromUrlInput] = useState("")
 
   const loadData = async () => {
     if (!clusterId) return
     try {
       setRefreshing(true)
-      const [ovData, pStatus, polData] = await Promise.all([
+      const [ovData, pStatus, polData, alertsData] = await Promise.all([
         getReliabilityOverview(clusterId),
         getPrometheusStatus(clusterId).catch(() => null),
         getAlertPolicies(clusterId).catch(() => ({ policies: [] })),
+        getActiveAlerts(clusterId).catch(() => ({ alerts: [] })),
       ])
       setOverview(ovData)
       setPromStatus(pStatus)
       setPolicies(polData.policies || [])
+      setActiveAlertsList(alertsData.alerts || [])
       if (pStatus?.url) setPromUrlInput(pStatus.url)
     } catch (e) {
       console.error("Failed to load reliability data:", e)
@@ -223,11 +227,10 @@ export function ReliabilityControlPlane({
         <div className="flex items-center space-x-3">
           <div className="flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs">
             <span
-              className={`w-2 h-2 rounded-full ${
-                promStatus?.status === "CONNECTED"
-                  ? "bg-emerald-400 animate-pulse"
-                  : "bg-amber-400"
-              }`}
+              className={`w-2 h-2 rounded-full ${promStatus?.status === "CONNECTED"
+                ? "bg-emerald-400 animate-pulse"
+                : "bg-amber-400"
+                }`}
             />
             <span className="text-slate-300 font-medium">Prometheus:</span>
             <span className="font-mono text-slate-100">
@@ -261,11 +264,10 @@ export function ReliabilityControlPlane({
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as TabType)}
-              className={`flex-1 py-2.5 px-3 text-xs font-semibold rounded-lg flex items-center justify-center gap-2 transition ${
-                isActive
-                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
-              }`}
+              className={`flex-1 py-2.5 px-3 text-xs font-semibold rounded-lg flex items-center justify-center gap-2 transition ${isActive
+                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20"
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                }`}
             >
               <Icon className="w-4 h-4" />
               {tab.label}
@@ -373,13 +375,12 @@ export function ReliabilityControlPlane({
                       <td className="py-3 px-4">
                         <div className="w-32 bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-800">
                           <div
-                            className={`h-full rounded-full ${
-                              slo.errorBudgetRemaining > 50
-                                ? "bg-emerald-400"
-                                : slo.errorBudgetRemaining > 20
+                            className={`h-full rounded-full ${slo.errorBudgetRemaining > 50
+                              ? "bg-emerald-400"
+                              : slo.errorBudgetRemaining > 20
                                 ? "bg-amber-400"
                                 : "bg-rose-500"
-                            }`}
+                              }`}
                             style={{ width: `${slo.errorBudgetRemaining}%` }}
                           />
                         </div>
@@ -389,15 +390,14 @@ export function ReliabilityControlPlane({
                       </td>
                       <td className="py-3 px-4">
                         <span
-                          className={`px-2.5 py-1 rounded-full text-[11px] font-semibold uppercase tracking-wider ${
-                            slo.status === "healthy"
-                              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                              : slo.status === "at_risk"
+                          className={`px-2.5 py-1 rounded-full text-[11px] font-semibold uppercase tracking-wider ${slo.status === "healthy"
+                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                            : slo.status === "at_risk"
                               ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
                               : slo.status === "exhausted"
-                              ? "bg-rose-500/10 text-rose-400 border border-rose-500/20"
-                              : "bg-slate-800 text-slate-400"
-                          }`}
+                                ? "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                                : "bg-slate-800 text-slate-400"
+                            }`}
                         >
                           {slo.status}
                         </span>
@@ -522,13 +522,12 @@ export function ReliabilityControlPlane({
                   </div>
                   <div className="w-full bg-slate-950 rounded-full h-3 overflow-hidden border border-slate-800">
                     <div
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        slo.errorBudgetRemaining > 50
-                          ? "bg-emerald-400"
-                          : slo.errorBudgetRemaining > 20
+                      className={`h-full rounded-full transition-all duration-500 ${slo.errorBudgetRemaining > 50
+                        ? "bg-emerald-400"
+                        : slo.errorBudgetRemaining > 20
                           ? "bg-amber-400"
                           : "bg-rose-500"
-                      }`}
+                        }`}
                       style={{ width: `${slo.errorBudgetRemaining}%` }}
                     />
                   </div>
@@ -645,6 +644,52 @@ export function ReliabilityControlPlane({
             </button>
           </div>
 
+          {/* Active Incidents */}
+          <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                <Flame className="w-4 h-4 text-rose-400 animate-pulse" />
+                Live Firing Alerts & Incidents ({activeAlertsList.length})
+              </h4>
+            </div>
+
+            {activeAlertsList.length === 0 ? (
+              <div className="p-8 text-center bg-slate-950/40 rounded-xl border border-slate-800/60 text-slate-400 text-xs">
+                No active incidents firing for cluster <span className="font-mono text-indigo-400">{clusterId}</span>. All services operational.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {activeAlertsList.map((alert) => (
+                  <div key={alert.fingerprint} className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-start justify-between">
+                    <div className="space-y-1">
+                      <div className="flex items-center space-x-2">
+                        <span className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded ${alert.severity === "P1" ? "bg-rose-500/20 text-rose-400 border border-rose-500/30" : "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                          }`}>
+                          {alert.severity}
+                        </span>
+                        <h5 className="text-sm font-bold text-slate-100">{alert.name}</h5>
+                        <span className="text-xs text-slate-400 font-mono">({alert.service} / {alert.namespace})</span>
+                      </div>
+                      <p className="text-xs text-slate-300">{alert.summary}</p>
+                      {alert.description && (
+                        <p className="text-[11px] text-slate-400 font-mono">{alert.description}</p>
+                      )}
+                    </div>
+                    {onNavigateToResource && alert.service && (
+                      <button
+                        onClick={() => onNavigateToResource("service", alert.service, alert.namespace)}
+                        className="px-3 py-1.5 text-xs font-medium text-indigo-400 hover:text-white bg-indigo-500/10 hover:bg-indigo-600 rounded-lg flex items-center gap-1 transition"
+                      >
+                        Investigate <ExternalLink className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Configured Policies */}
           <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
             <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
               Configured Alert Policies
@@ -662,6 +707,20 @@ export function ReliabilityControlPlane({
                     <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">
                       {p.severity}
                     </span>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await testAlertPolicy(clusterId, p.id!)
+                          loadData()
+                        } catch (e: any) {
+                          alert(e.message)
+                        }
+                      }}
+                      className="p-1.5 text-xs text-amber-400 hover:bg-amber-500/10 border border-amber-500/20 rounded-lg transition"
+                      title="Trigger Test Alert"
+                    >
+                      <Zap className="w-3.5 h-3.5" />
+                    </button>
                     <button
                       onClick={() => handleDeletePolicy(p.id!)}
                       className="p-1 text-slate-400 hover:text-rose-400 transition"

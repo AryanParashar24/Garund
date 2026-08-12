@@ -2,8 +2,12 @@ package server
 
 import (
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestCalculateErrorBudgetRemaining(t *testing.T) {
@@ -169,3 +173,83 @@ func TestAlertStoreWebhookIngestion(t *testing.T) {
 		t.Errorf("expected critical severity to map to P1, got %s", alerts[0].Severity)
 	}
 }
+
+func TestEvaluateSLA_SafetyMargin(t *testing.T) {
+	availTarget := 99.0
+	slaItem := SLAItem{
+		ID:                 "sla-1",
+		Name:               "Customer SLA",
+		Service:            "checkout",
+		Namespace:          "default",
+		AvailabilityTarget: &availTarget,
+		Window:             "30d",
+	}
+
+	// SLO target is 99.9%, SLA target is 99.0% -> safety margin is +0.9%
+	currAvail := 99.95
+	evaluated := EvaluateSLA(slaItem, &currAvail, nil, 99.9)
+
+	if evaluated.Status != "compliant" {
+		t.Errorf("expected status 'compliant', got '%s'", evaluated.Status)
+	}
+	if evaluated.SafetyMargin == nil || *evaluated.SafetyMargin != 0.9 {
+		t.Errorf("expected safety margin 0.9, got %v", evaluated.SafetyMargin)
+	}
+}
+
+func TestDestinationCRUD(t *testing.T) {
+	store := NewReliabilityStore("") // memory-only
+
+	dest := NotificationDestination{
+		Name:      "PagerDuty OnCall",
+		Type:      "pagerduty",
+		ClusterID: "cluster-prod",
+		Enabled:   true,
+		Config: map[string]string{
+			"routing_key": "pd-secret-token",
+		},
+	}
+
+	saved := store.SaveDestination(dest)
+	if saved.ID == "" {
+		t.Fatalf("expected destination ID to be generated")
+	}
+
+	list := store.ListDestinations("cluster-prod")
+	if len(list) != 1 {
+		t.Fatalf("expected 1 destination for cluster-prod, got %d", len(list))
+	}
+
+	deleted := store.DeleteDestination(saved.ID)
+	if !deleted {
+		t.Errorf("expected DeleteDestination to return true")
+	}
+}
+
+func TestReliabilityHTTPOverviewEndpoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	RegisterReliabilityRoutes(router)
+
+	endpoints := []string{
+		"/api/clusters/local-dev/reliability/overview",
+		"/api/clusters/local-dev/slis",
+		"/api/clusters/local-dev/slos",
+		"/api/clusters/local-dev/slas",
+		"/api/clusters/local-dev/alerts/active",
+		"/api/clusters/local-dev/prometheus/status",
+		"/api/reliability/overview",
+	}
+
+	for _, ep := range endpoints {
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", ep, nil)
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK && w.Code != http.StatusTemporaryRedirect {
+			t.Errorf("expected endpoint %s to return 200 or 307 redirect, got HTTP %d: %s", ep, w.Code, w.Body.String())
+		}
+	}
+}
+
+

@@ -418,6 +418,172 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 		c.JSON(http.StatusOK, gin.H{"labels": names})
 	})
 
+	router.GET("/api/clusters/:id/prometheus/query", func(c *gin.Context) {
+		clusterID := c.Param("id")
+		query := c.Query("query")
+		if query == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "query parameter required"})
+			return
+		}
+		client := getPrometheusClientForCluster(clusterID)
+		val, hasData, err := client.QueryOptional(query)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error(), "hasData": false})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"clusterId": clusterID,
+			"query":     query,
+			"value":     val,
+			"hasData":   hasData,
+		})
+	})
+
+	router.GET("/api/clusters/:id/prometheus/query-range", func(c *gin.Context) {
+		clusterID := c.Param("id")
+		query := c.Query("query")
+		startStr := c.Query("start")
+		endStr := c.Query("end")
+
+		if query == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "query parameter required"})
+			return
+		}
+
+		now := time.Now()
+		end := now
+		start := now.Add(-24 * time.Hour)
+
+		if startStr != "" {
+			if unix, err := time.Parse(time.RFC3339, startStr); err == nil {
+				start = unix
+			}
+		}
+		if endStr != "" {
+			if unix, err := time.Parse(time.RFC3339, endStr); err == nil {
+				end = unix
+			}
+		}
+
+		client := getPrometheusClientForCluster(clusterID)
+		points, err := client.QueryRange(query, start, end, 15*time.Minute)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"clusterId": clusterID,
+			"query":     query,
+			"points":    points,
+		})
+	})
+
+	router.GET("/api/clusters/:id/prometheus/rules", func(c *gin.Context) {
+		clusterID := c.Param("id")
+		client := getPrometheusClientForCluster(clusterID)
+		rules, err := client.Rules(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"rules": rules})
+	})
+
+	router.GET("/api/clusters/:id/prometheus/alerts", func(c *gin.Context) {
+		clusterID := c.Param("id")
+		client := getPrometheusClientForCluster(clusterID)
+		alerts, err := client.Alerts(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"alerts": alerts})
+	})
+
+	router.GET("/api/clusters/:id/prometheus/targets", func(c *gin.Context) {
+		clusterID := c.Param("id")
+		client := getPrometheusClientForCluster(clusterID)
+		targets, err := client.Targets(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"targets": targets})
+	})
+
+	router.GET("/api/clusters/:id/prometheus/metadata", func(c *gin.Context) {
+		clusterID := c.Param("id")
+		metric := c.Query("metric")
+		client := getPrometheusClientForCluster(clusterID)
+		meta, err := client.Metadata(c.Request.Context(), metric)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"metadata": meta})
+	})
+
+	// Alertmanager Status & Config
+	router.GET("/api/clusters/:id/alertmanager/status", func(c *gin.Context) {
+		clusterID := c.Param("id")
+		amClient := getAlertmanagerClientForCluster(clusterID)
+		status, err := amClient.Health(c.Request.Context())
+		errStr := ""
+		if err != nil {
+			errStr = err.Error()
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"clusterId": clusterID,
+			"url":       amClient.BaseURL,
+			"status":    status,
+			"lastError": errStr,
+		})
+	})
+
+	router.POST("/api/clusters/:id/alertmanager/config", func(c *gin.Context) {
+		clusterID := c.Param("id")
+		var body struct {
+			URL string `json:"url"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		store.SetAlertmanagerURL(clusterID, body.URL)
+		c.JSON(http.StatusOK, gin.H{"message": "Alertmanager URL updated"})
+	})
+
+	// Notification Destinations
+	router.GET("/api/clusters/:id/destinations", func(c *gin.Context) {
+		clusterID := c.Param("id")
+		destinations := store.ListDestinations(clusterID)
+		c.JSON(http.StatusOK, gin.H{
+			"clusterId":    clusterID,
+			"destinations": destinations,
+		})
+	})
+
+	router.POST("/api/clusters/:id/destinations", func(c *gin.Context) {
+		clusterID := c.Param("id")
+		var dest NotificationDestination
+		if err := c.ShouldBindJSON(&dest); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		dest.ClusterID = clusterID
+		saved := store.SaveDestination(dest)
+		c.JSON(http.StatusCreated, saved)
+	})
+
+	router.DELETE("/api/clusters/:id/destinations/:destId", func(c *gin.Context) {
+		destID := c.Param("destId")
+		if store.DeleteDestination(destID) {
+			c.JSON(http.StatusOK, gin.H{"message": "Notification destination removed"})
+		} else {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Destination not found"})
+		}
+	})
+
 	// 6. Comprehensive Reliability Overview
 	router.GET("/api/clusters/:id/reliability/overview", func(c *gin.Context) {
 		clusterID := c.Param("id")
@@ -692,5 +858,17 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 			SLO:       defaultSLO,
 			SLA:       defaultSLA,
 		})
+	})
+
+	// Unscoped fallback for /api/reliability/overview
+	router.GET("/api/reliability/overview", func(c *gin.Context) {
+		clusterID := c.Query("cluster")
+		if clusterID == "" {
+			clusterID = k8s.GetManager().GetActiveClusterID()
+		}
+		if clusterID == "" {
+			clusterID = "local-dev"
+		}
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("/api/clusters/%s/reliability/overview", clusterID))
 	})
 }
