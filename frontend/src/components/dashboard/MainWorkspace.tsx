@@ -23,7 +23,7 @@ import {
 } from "@/lib/api"
 
 export function MainWorkspace() {
-  const [activeTab, setActiveTab] = useState<"dashboard" | "connections">("dashboard")
+  const [activeTab, setActiveTab] = useState<"dashboard" | "reliability" | "connections">("dashboard")
   const [selectedClusterId, setSelectedClusterId] = useState<string>("")
   const [selectedCluster, setSelectedCluster] = useState<ClusterConnection | null>(null)
   const [isAddWizardOpen, setIsAddWizardOpen] = useState(false)
@@ -117,6 +117,19 @@ export function MainWorkspace() {
               </button>
 
               <button
+                onClick={() => setActiveTab("reliability")}
+                className={`
+                  flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors
+                  ${activeTab === "reliability" ? "bg-indigo-600 text-white shadow" : "text-zinc-400 hover:text-zinc-200"}
+                `}
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+                Reliability Control Plane
+              </button>
+
+              <button
                 onClick={() => setActiveTab("connections")}
                 className={`
                   flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors
@@ -152,6 +165,11 @@ export function MainWorkspace() {
             }}
             onOpenAddWizard={() => setIsAddWizardOpen(true)}
           />
+        )}
+
+        {/* RELIABILITY CONTROL PLANE VIEW */}
+        {activeTab === "reliability" && (
+          <ReliabilityPanel clusterId={selectedClusterId} />
         )}
 
         {/* WORKSPACE DASHBOARD VIEW */}

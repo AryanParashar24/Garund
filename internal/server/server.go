@@ -61,17 +61,7 @@ type searchResourceType struct {
 	score int
 }
 
-type ReliabilityMetric struct {
-	Name        string   `json:"name"`
-	Type        string   `json:"type"`
-	Value       *float64 `json:"value"`
-	Target      float64  `json:"target"`
-	Unit        string   `json:"unit"`
-	GoodEvents  int64    `json:"goodEvents"`
-	TotalEvents int64    `json:"totalEvents"`
-	Window      string   `json:"window"`
-	Status      string   `json:"status"`
-}
+
 
 type ReliabilitySLO struct {
 	Name                 string   `json:"name"`
@@ -634,11 +624,9 @@ func Run(opts Options) error {
 	if prometheusURL == "" {
 		prometheusURL = os.Getenv("PROMETHEUS_URL")
 	}
-	if prometheusURL == "" {
-		prometheusURL = "http://localhost:9090"
+	if prometheusURL != "" {
+		GetReliabilityStore().SetPrometheusURL("local-dev", prometheusURL)
 	}
-
-	prometheusClient := NewPrometheusClient(prometheusURL)
 
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
@@ -838,11 +826,7 @@ func Run(opts Options) error {
 
 	router.GET("/api/clusters/:id/agent/ws", agent.HandleAgentWebSocket)
 
-	registerReliabilityRoutes(
-		router,
-		clientset,
-		prometheusClient,
-	)
+	RegisterReliabilityRoutes(router)
 
 	router.GET("/pods", func(c *gin.Context) {
 
@@ -2268,16 +2252,36 @@ func Run(opts Options) error {
 		* Sort best matches first.
 		 */
 
+		// Include Reliability SLIs, SLOs, and Alerts in global search
+		targetClusterID := c.Query("cluster")
+		if targetClusterID == "" {
+			targetClusterID = k8s.GetManager().GetActiveClusterID()
+		}
+
+		relStore := GetReliabilityStore()
+		for _, slo := range relStore.ListSLOs(targetClusterID) {
+			if searchMatches(slo.Name, slo.Namespace, "SLO", searchTerm) {
+				addSearchResult(&results, "SLO", slo.Name, slo.Namespace, fmt.Sprintf("%.1f%%", slo.Target), "healthy", slo.ID, searchTerm)
+			}
+		}
+		for _, sli := range relStore.ListSLIs(targetClusterID) {
+			if searchMatches(sli.Name, sli.Namespace, "SLI", searchTerm) {
+				addSearchResult(&results, "SLI", sli.Name, sli.Namespace, sli.Type, "healthy", sli.ID, searchTerm)
+			}
+		}
+
+		alStore := GetAlertStore()
+		for _, alert := range alStore.ListAlerts(targetClusterID, "") {
+			if searchMatches(alert.Name, alert.Namespace, "Alert", searchTerm) || searchMatches(alert.Summary, alert.Namespace, "Alert", searchTerm) {
+				addSearchResult(&results, "Alert", alert.Name, alert.Namespace, alert.Severity, alert.Status, alert.Fingerprint, searchTerm)
+			}
+		}
+
 		sort.SliceStable(
 			results,
 			func(i, j int) bool {
-
-				left, _ :=
-					results[i]["score"].(int)
-
-				right, _ :=
-					results[j]["score"].(int)
-
+				left, _ := results[i]["score"].(int)
+				right, _ := results[j]["score"].(int)
 				return left > right
 			},
 		)
@@ -2802,6 +2806,8 @@ func Run(opts Options) error {
 	if err := StartSyntheticReliabilityProbe(probeCtx); err != nil {
 		log.Printf("failed to start synthetic reliability probe: %v", err)
 	}
+
+	RegisterReliabilityRoutes(router)
 
 	if opts.ServeFrontend {
 		web.RegisterRoutes(router)
