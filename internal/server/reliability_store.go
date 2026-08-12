@@ -326,7 +326,7 @@ func (s *ReliabilityStore) ListSLIs(clusterID string) []SLIItem {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var result []SLIItem
+	result := make([]SLIItem, 0)
 	for _, item := range s.data.SLIs {
 		if clusterID == "" || item.ClusterID == clusterID {
 			result = append(result, item)
@@ -366,7 +366,7 @@ func (s *ReliabilityStore) ListSLOs(clusterID string) []SLOItem {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var result []SLOItem
+	result := make([]SLOItem, 0)
 	for _, item := range s.data.SLOs {
 		if clusterID == "" || item.ClusterID == clusterID {
 			result = append(result, item)
@@ -406,7 +406,7 @@ func (s *ReliabilityStore) ListSLAs(clusterID string) []SLAItem {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var result []SLAItem
+	result := make([]SLAItem, 0)
 	for _, item := range s.data.SLAs {
 		if clusterID == "" || item.ClusterID == clusterID {
 			result = append(result, item)
@@ -446,13 +446,21 @@ func (s *ReliabilityStore) ListAlertPolicies(clusterID string) []AlertPolicyItem
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var result []AlertPolicyItem
+	result := make([]AlertPolicyItem, 0)
 	for _, item := range s.data.AlertPolicies {
 		if clusterID == "" || item.ClusterID == clusterID {
 			result = append(result, item)
 		}
 	}
 	return result
+}
+
+func (s *ReliabilityStore) GetAlertPolicy(id string) (AlertPolicyItem, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	item, ok := s.data.AlertPolicies[id]
+	return item, ok
 }
 
 func (s *ReliabilityStore) SaveAlertPolicy(item AlertPolicyItem) AlertPolicyItem {
@@ -486,7 +494,7 @@ func (s *ReliabilityStore) ListDestinations(clusterID string) []NotificationDest
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var result []NotificationDestination
+	result := make([]NotificationDestination, 0)
 	for _, item := range s.data.Destinations {
 		if clusterID == "" || item.ClusterID == clusterID {
 			result = append(result, item)

@@ -270,6 +270,17 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 		})
 	})
 
+	router.GET("/api/clusters/:id/alerts/policies/:policyId", func(c *gin.Context) {
+		clusterID := c.Param("id")
+		policyID := c.Param("policyId")
+		policy, found := store.GetAlertPolicy(policyID)
+		if !found || (policy.ClusterID != "" && policy.ClusterID != clusterID) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Alert policy not found"})
+			return
+		}
+		c.JSON(http.StatusOK, policy)
+	})
+
 	router.POST("/api/clusters/:id/alerts/policies", func(c *gin.Context) {
 		clusterID := c.Param("id")
 		var item AlertPolicyItem
@@ -282,9 +293,39 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 		c.JSON(http.StatusCreated, saved)
 	})
 
+	updatePolicyHandler := func(c *gin.Context) {
+		clusterID := c.Param("id")
+		policyID := c.Param("policyId")
+		existing, found := store.GetAlertPolicy(policyID)
+		if !found || (existing.ClusterID != "" && existing.ClusterID != clusterID) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Alert policy not found"})
+			return
+		}
+		var item AlertPolicyItem
+		if err := c.ShouldBindJSON(&item); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		item.ID = policyID
+		item.ClusterID = clusterID
+		if item.CreatedAt.IsZero() {
+			item.CreatedAt = existing.CreatedAt
+		}
+		saved := store.SaveAlertPolicy(item)
+		c.JSON(http.StatusOK, saved)
+	}
+
+	router.PUT("/api/clusters/:id/alerts/policies/:policyId", updatePolicyHandler)
+	router.PATCH("/api/clusters/:id/alerts/policies/:policyId", updatePolicyHandler)
+
 	router.POST("/api/clusters/:id/alerts/policies/:policyId/test", func(c *gin.Context) {
 		policyID := c.Param("policyId")
 		clusterID := c.Param("id")
+		existing, found := store.GetAlertPolicy(policyID)
+		if !found || (existing.ClusterID != "" && existing.ClusterID != clusterID) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Alert policy not found"})
+			return
+		}
 
 		c.JSON(http.StatusOK, gin.H{
 			"message":   fmt.Sprintf("Test alert triggered for policy %s on cluster %s", policyID, clusterID),
@@ -294,7 +335,13 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 	})
 
 	router.DELETE("/api/clusters/:id/alerts/policies/:policyId", func(c *gin.Context) {
+		clusterID := c.Param("id")
 		policyID := c.Param("policyId")
+		existing, found := store.GetAlertPolicy(policyID)
+		if !found || (existing.ClusterID != "" && existing.ClusterID != clusterID) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Alert policy not found"})
+			return
+		}
 		if store.DeleteAlertPolicy(policyID) {
 			c.JSON(http.StatusOK, gin.H{"message": "Alert policy removed"})
 		} else {
@@ -598,7 +645,7 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 
 		client := getPrometheusClientForCluster(clusterID)
 
-		var evalSLIs []EvaluatedSLI
+		evalSLIs := make([]EvaluatedSLI, 0)
 		for _, item := range slis {
 			output := GeneratePromQL(PromQLInput{
 				Type:        item.Type,
@@ -634,7 +681,7 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 			})
 		}
 
-		var evalSLOs []EvaluatedSLO
+		evalSLOs := make([]EvaluatedSLO, 0)
 		healthyCount, atRiskCount, exhaustedCount := 0, 0, 0
 		for _, item := range slos {
 			sli, exists := sliMap[item.SLIID]
@@ -674,7 +721,7 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 			evalSLOs = append(evalSLOs, evalSLO)
 		}
 
-		var evalSLAs []EvaluatedSLA
+		evalSLAs := make([]EvaluatedSLA, 0)
 		for _, item := range slas {
 			output := GeneratePromQL(PromQLInput{
 				Type:      "availability",

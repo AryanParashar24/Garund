@@ -1,6 +1,8 @@
 package server
 
 import (
+	"bytes"
+	"encoding/json"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -251,5 +253,147 @@ func TestReliabilityHTTPOverviewEndpoint(t *testing.T) {
 		}
 	}
 }
+
+func TestAlertPolicyCRUDAndClusterIsolation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	RegisterReliabilityRoutes(router)
+
+	// 1. Empty policy list -> 200 []
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/clusters/cluster-a/alerts/policies", nil)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for empty policy list, got %d", w.Code)
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte(`"policies":[]`)) {
+		t.Errorf("expected empty policies array [], got %s", w.Body.String())
+	}
+
+	// 2. Nonexistent policy -> 404
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/api/clusters/cluster-a/alerts/policies/nonexistent-id", nil)
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for nonexistent policy GET, got %d", w.Code)
+	}
+
+	// 3. Create policy for cluster-a
+	newPolicyJSON := `{
+		"name": "High Error Rate Policy",
+		"condition": "burn_rate_exceeded",
+		"threshold": 2.5,
+		"severity": "critical",
+		"enabled": true
+	}`
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("POST", "/api/clusters/cluster-a/alerts/policies", bytes.NewBufferString(newPolicyJSON))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created when creating policy, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var created AlertPolicyItem
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to unmarshal created policy: %v", err)
+	}
+	if created.ID == "" {
+		t.Fatalf("expected created policy to have an ID")
+	}
+	if created.ClusterID != "cluster-a" {
+		t.Errorf("expected clusterId cluster-a, got %s", created.ClusterID)
+	}
+
+	// 4. GET created policy on cluster-a
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/api/clusters/cluster-a/alerts/policies/"+created.ID, nil)
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 OK for GET created policy, got %d", w.Code)
+	}
+
+	// 5. GET created policy on cluster-b (wrong clusterId isolation) -> 404
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/api/clusters/cluster-b/alerts/policies/"+created.ID, nil)
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 when querying policy with wrong clusterId, got %d", w.Code)
+	}
+
+	// 6. List policies on cluster-a vs cluster-b
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/api/clusters/cluster-a/alerts/policies", nil)
+	router.ServeHTTP(w, req)
+	if !bytes.Contains(w.Body.Bytes(), []byte(created.ID)) {
+		t.Errorf("expected cluster-a policy list to contain %s", created.ID)
+	}
+
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/api/clusters/cluster-b/alerts/policies", nil)
+	router.ServeHTTP(w, req)
+	if bytes.Contains(w.Body.Bytes(), []byte(created.ID)) {
+		t.Errorf("expected cluster-b policy list NOT to contain %s", created.ID)
+	}
+
+	// 7. Update policy on cluster-a (PUT)
+	updateJSON := `{
+		"name": "High Error Rate Policy Updated",
+		"condition": "burn_rate_exceeded",
+		"threshold": 5.0,
+		"severity": "critical",
+		"enabled": true
+	}`
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("PUT", "/api/clusters/cluster-a/alerts/policies/"+created.ID, bytes.NewBufferString(updateJSON))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for PUT policy update, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var updated AlertPolicyItem
+	_ = json.Unmarshal(w.Body.Bytes(), &updated)
+	if updated.Threshold != 5.0 || updated.Name != "High Error Rate Policy Updated" {
+		t.Errorf("policy update mismatch, got threshold %f, name %s", updated.Threshold, updated.Name)
+	}
+
+	// 8. Update policy on cluster-b (wrong clusterId isolation) -> 404
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("PUT", "/api/clusters/cluster-b/alerts/policies/"+created.ID, bytes.NewBufferString(updateJSON))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for PUT policy update with wrong clusterId, got %d", w.Code)
+	}
+
+	// 9. Delete policy on cluster-b (wrong clusterId isolation) -> 404
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("DELETE", "/api/clusters/cluster-b/alerts/policies/"+created.ID, nil)
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for DELETE policy with wrong clusterId, got %d", w.Code)
+	}
+
+	// 10. Delete policy on cluster-a -> 200
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("DELETE", "/api/clusters/cluster-a/alerts/policies/"+created.ID, nil)
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 OK for DELETE policy, got %d", w.Code)
+	}
+
+	// 11. Verify policy is deleted -> 404
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/api/clusters/cluster-a/alerts/policies/"+created.ID, nil)
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for deleted policy GET, got %d", w.Code)
+	}
+}
+
 
 

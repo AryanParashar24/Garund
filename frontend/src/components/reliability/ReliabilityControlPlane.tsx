@@ -103,7 +103,24 @@ export function ReliabilityControlPlane({
     try {
       setRefreshing(true)
       const [ovData, pStatus, polData, alertsData] = await Promise.all([
-        getReliabilityOverview(clusterId),
+        getReliabilityOverview(clusterId).catch(() => {
+          console.warn(`Reliability overview unavailable for cluster ${clusterId || "local-dev"} (backend offline or uninitialized)`)
+          return {
+            clusterId: clusterId || "local-dev",
+            evaluatedAt: new Date().toISOString(),
+            slis: [],
+            slos: [],
+            slas: [],
+            summary: {
+              overallHealthScore: 100,
+              totalSlos: 0,
+              healthySlos: 0,
+              atRiskSlos: 0,
+              exhaustedSlos: 0,
+              activeAlerts: 0,
+            },
+          }
+        }),
         getPrometheusStatus(clusterId).catch(() => null),
         getAlertPolicies(clusterId).catch(() => ({ policies: [] })),
         getActiveAlerts(clusterId).catch(() => ({ alerts: [] })),

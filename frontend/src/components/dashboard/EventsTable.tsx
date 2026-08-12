@@ -339,42 +339,21 @@ export function EventsTable({
 
       {/* Header */}
 
-      <div className="
-        border-b
-        border-zinc-800
-        px-4
-        py-3
-      ">
+      <div className="border-b border-zinc-800 px-4 py-3">
 
-        <div className="
-          flex
-          items-center
-          justify-between
-          gap-4
-        ">
+        <div className="flex items-center justify-between gap-4">
 
           <div>
-            <h2 className="
-              text-sm
-              font-medium
-              text-zinc-200
-            ">
+            <h2 className="text-sm font-medium text-zinc-200">
               Event History
             </h2>
 
-            <p className="
-              mt-0.5
-              text-xs
-              text-zinc-500
-            ">
+            <p className="mt-0.5 text-xs text-zinc-500">
               Kubernetes cluster activity
             </p>
           </div>
 
-          <div className="
-            text-xs
-            text-zinc-600
-          ">
+          <div className="text-xs text-zinc-600">
             {filteredEvents.length} / {events.length}
           </div>
 
@@ -382,13 +361,7 @@ export function EventsTable({
 
         {/* Severity filters */}
 
-        <div className="
-          mt-4
-          flex
-          flex-wrap
-          items-center
-          gap-2
-        ">
+        <div className="mt-4 flex flex-wrap items-center gap-2">
 
           {(
             [
@@ -404,19 +377,11 @@ export function EventsTable({
               onClick={() =>
                 setFilter(value)
               }
-              className={`
-                rounded-md
-                border
-                px-3
-                py-1.5
-                text-xs
-                transition-colors
-                ${
-                  filter === value
-                    ? "border-zinc-600 bg-zinc-800 text-zinc-100"
-                    : "border-zinc-800 bg-zinc-950 text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300"
-                }
-              `}
+              className={`rounded-md border px-3 py-1.5 text-xs transition-colors ${
+                filter === value
+                  ? "border-zinc-600 bg-zinc-800 text-zinc-100"
+                  : "border-zinc-800 bg-zinc-950 text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300"
+              }`}
             >
               {label}
             </button>
@@ -427,13 +392,7 @@ export function EventsTable({
 
         {/* Search + filters */}
 
-        <div className="
-          mt-3
-          grid
-          grid-cols-1
-          gap-2
-          md:grid-cols-4
-        ">
+        <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-4">
 
           <input
             value={search}
@@ -441,19 +400,7 @@ export function EventsTable({
               setSearch(event.target.value)
             }
             placeholder="Search events..."
-            className="
-              rounded-md
-              border
-              border-zinc-800
-              bg-zinc-950
-              px-3
-              py-2
-              text-xs
-              text-zinc-200
-              outline-none
-              placeholder:text-zinc-600
-              focus:border-zinc-600
-            "
+            className="rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-zinc-600"
           />
 
           <select
@@ -463,17 +410,7 @@ export function EventsTable({
                 event.target.value
               )
             }
-            className="
-              rounded-md
-              border
-              border-zinc-800
-              bg-zinc-950
-              px-3
-              py-2
-              text-xs
-              text-zinc-400
-              outline-none
-            "
+            className="rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-400 outline-none"
           >
             <option value="all">
               All namespaces
@@ -498,17 +435,7 @@ export function EventsTable({
                 event.target.value
               )
             }
-            className="
-              rounded-md
-              border
-              border-zinc-800
-              bg-zinc-950
-              px-3
-              py-2
-              text-xs
-              text-zinc-400
-              outline-none
-            "
+            className="rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-400 outline-none"
           >
             <option value="all">
               All resources
@@ -533,17 +460,7 @@ export function EventsTable({
                 event.target.value as SortMode
               )
             }
-            className="
-              rounded-md
-              border
-              border-zinc-800
-              bg-zinc-950
-              px-3
-              py-2
-              text-xs
-              text-zinc-400
-              outline-none
-            "
+            className="rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-400 outline-none"
           >
             <option value="latest">
               Latest
@@ -564,24 +481,13 @@ export function EventsTable({
 
       {/* Event table */}
 
-      <div className="
-        max-h-[560px]
-        overflow-auto
-      ">
+      <div className="max-h-[560px] overflow-auto">
 
         <Table>
 
-          <TableHeader className="
-            sticky
-            top-0
-            z-10
-            bg-zinc-950
-          ">
+          <TableHeader className="sticky top-0 z-10 bg-zinc-950">
 
-            <TableRow className="
-              border-zinc-800
-              hover:bg-transparent
-            ">
+            <TableRow className="border-zinc-800 hover:bg-transparent">
 
               <TableHead>
                 Severity
@@ -653,28 +559,13 @@ export function EventsTable({
                 return (
                   <TableRow
                     key={`${event.name}-${index}`}
-                    className="
-                      border-zinc-800
-                      transition-colors
-                      hover:bg-zinc-900/60
-                    "
+                    className="border-zinc-800 transition-colors hover:bg-zinc-900/60"
                   >
 
                     <TableCell>
 
                       <span
-                        className={`
-                          inline-flex
-                          items-center
-                          gap-1.5
-                          rounded-md
-                          border
-                          px-2
-                          py-1
-                          text-[11px]
-                          font-medium
-                          ${severity.badge}
-                        `}
+                        className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium ${severity.badge}`}
                       >
                         {severity.icon}
                         {severity.label}
@@ -683,10 +574,7 @@ export function EventsTable({
                     </TableCell>
 
                     <TableCell>
-                      <span className="
-                        font-medium
-                        text-zinc-200
-                      ">
+                      <span className="font-medium text-zinc-200">
                         {event.reason ||
                           "Unknown"}
                       </span>
@@ -708,32 +596,18 @@ export function EventsTable({
                                 resourceNamespace,
                             })
                           }
-                          className="
-                            text-left
-                            transition-colors
-                            hover:text-blue-400
-                          "
+                          className="text-left transition-colors hover:text-blue-400"
                         >
 
-                          <div className="
-                            font-medium
-                            text-zinc-200
-                          ">
+                          <div className="font-medium text-zinc-200">
                             {resourceKind}
-                            <span className="
-                              mx-1
-                              text-zinc-600
-                            ">
+                            <span className="mx-1 text-zinc-600">
                               /
                             </span>
                             {resourceName}
                           </div>
 
-                          <div className="
-                            mt-0.5
-                            text-[10px]
-                            text-zinc-600
-                          ">
+                          <div className="mt-0.5 text-[10px] text-zinc-600">
                             Open resource
                           </div>
 
@@ -741,15 +615,9 @@ export function EventsTable({
 
                       ) : (
 
-                        <div className="
-                          font-medium
-                          text-zinc-400
-                        ">
+                        <div className="font-medium text-zinc-400">
                           {resourceKind}
-                          <span className="
-                            mx-1
-                            text-zinc-600
-                          ">
+                          <span className="mx-1 text-zinc-600">
                             /
                           </span>
                           {resourceName}
@@ -761,14 +629,7 @@ export function EventsTable({
 
                     <TableCell>
 
-                      <span className="
-                        rounded-md
-                        bg-zinc-900
-                        px-2
-                        py-1
-                        text-xs
-                        text-zinc-400
-                      ">
+                      <span className="rounded-md bg-zinc-900 px-2 py-1 text-xs text-zinc-400">
                         {resourceNamespace}
                       </span>
 
@@ -777,12 +638,7 @@ export function EventsTable({
                     <TableCell>
 
                       <div
-                        className="
-                          max-w-[360px]
-                          truncate
-                          text-xs
-                          text-zinc-400
-                        "
+                        className="max-w-[360px] truncate text-xs text-zinc-400"
                         title={event.message}
                       >
                         {event.message}
@@ -792,10 +648,7 @@ export function EventsTable({
 
                     <TableCell className="text-right">
 
-                      <span className="
-                        text-xs
-                        text-zinc-400
-                      ">
+                      <span className="text-xs text-zinc-400">
                         {event.count ?? 1}
                       </span>
 
@@ -809,21 +662,13 @@ export function EventsTable({
                         )}
                       >
 
-                        <div className="
-                          text-xs
-                          font-medium
-                          text-zinc-300
-                        ">
+                        <div className="text-xs font-medium text-zinc-300">
                           {formatRelativeTime(
                             timestamp
                           )}
                         </div>
 
-                        <div className="
-                          mt-0.5
-                          text-[10px]
-                          text-zinc-600
-                        ">
+                        <div className="mt-0.5 text-[10px] text-zinc-600">
                           {formatExactTime(
                             timestamp
                           )}
@@ -844,14 +689,7 @@ export function EventsTable({
 
         {filteredEvents.length === 0 && (
 
-          <div className="
-            flex
-            h-32
-            items-center
-            justify-center
-            text-sm
-            text-zinc-600
-          ">
+          <div className="flex h-32 items-center justify-center text-sm text-zinc-600">
             No events match the current filters.
           </div>
 

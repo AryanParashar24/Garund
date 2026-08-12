@@ -32,6 +32,8 @@ import { apiUrl } from "@/lib/config"
 
 import { SearchResult } from "@/components/search/types"
 
+import { useMemo } from "react"
+
 interface TopologyResponse {
   nodes: Node[]
   edges: Edge[]
@@ -51,12 +53,13 @@ interface TopologyViewProps {
   clusterId?: string
 }
 
-const nodeTypes = {
+const NODE_TYPES = {
   service: ResourceNode,
   deployment: ResourceNode,
   replicaset: ResourceNode,
   pod: ResourceNode,
 }
+const EDGE_TYPES = {}
 
 export function TopologyView({
   namespace = "",
@@ -64,6 +67,7 @@ export function TopologyView({
   selectedSearchResource = null,
   clusterId = "",
 }: TopologyViewProps) {
+
   const [
     nodes,
     setNodes,
@@ -367,7 +371,8 @@ export function TopologyView({
           onEdgesChange={
             onEdgesChange
           }
-          nodeTypes={nodeTypes}
+          nodeTypes={NODE_TYPES}
+          edgeTypes={EDGE_TYPES}
           onNodeClick={
             handleNodeClick
           }

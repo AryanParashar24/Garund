@@ -32,25 +32,12 @@ export function ServiceTable({
   return (
     <div>
 
-      <div className="
-        border-b
-        border-zinc-800
-        px-4
-        py-3
-      ">
-        <h2 className="
-          text-sm
-          font-medium
-          text-zinc-200
-        ">
+      <div className="border-b border-zinc-800 px-4 py-3">
+        <h2 className="text-sm font-medium text-zinc-200">
           Services
         </h2>
 
-        <p className="
-          mt-0.5
-          text-xs
-          text-zinc-500
-        ">
+        <p className="mt-0.5 text-xs text-zinc-500">
           Kubernetes services in the cluster
         </p>
       </div>

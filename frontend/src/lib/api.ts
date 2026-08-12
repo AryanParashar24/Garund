@@ -502,40 +502,16 @@ export interface Overview {
 
 export async function getReliabilityOverview(clusterId: string): Promise<FullReliabilityOverview> {
   const cid = clusterId || "local-dev"
-  try {
-    const res = await fetch(apiUrl(`/api/clusters/${cid}/reliability/overview`), { cache: "no-store" })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return await res.json()
-  } catch (e) {
-    console.warn(`Failed to fetch reliability overview for cluster ${cid}:`, e)
-    return {
-      clusterId: cid,
-      evaluatedAt: new Date().toISOString(),
-      slis: [],
-      slos: [],
-      slas: [],
-      summary: {
-        overallHealthScore: 100,
-        totalSlos: 0,
-        healthySlos: 0,
-        atRiskSlos: 0,
-        exhaustedSlos: 0,
-        activeAlerts: 0,
-      },
-    }
-  }
+  const res = await fetch(apiUrl(`/api/clusters/${cid}/reliability/overview`), { cache: "no-store" })
+  if (!res.ok) throw new Error(`Failed to fetch reliability overview: ${res.status}`)
+  return res.json()
 }
 
 export async function getSLIs(clusterId: string): Promise<{ slis: EvaluatedSLI[] }> {
   const cid = clusterId || "local-dev"
-  try {
-    const res = await fetch(apiUrl(`/api/clusters/${cid}/slis`), { cache: "no-store" })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return await res.json()
-  } catch (e) {
-    console.warn(`Failed to fetch SLIs for cluster ${cid}:`, e)
-    return { slis: [] }
-  }
+  const res = await fetch(apiUrl(`/api/clusters/${cid}/slis`), { cache: "no-store" })
+  if (!res.ok) throw new Error(`Failed to fetch SLIs: ${res.status}`)
+  return res.json()
 }
 
 export async function createSLI(clusterId: string, sli: SLIItem): Promise<SLIItem> {
@@ -568,14 +544,9 @@ export async function deleteSLI(clusterId: string, sliId: string): Promise<void>
 
 export async function getSLOs(clusterId: string): Promise<{ slos: EvaluatedSLO[] }> {
   const cid = clusterId || "local-dev"
-  try {
-    const res = await fetch(apiUrl(`/api/clusters/${cid}/slos`), { cache: "no-store" })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return await res.json()
-  } catch (e) {
-    console.warn(`Failed to fetch SLOs for cluster ${cid}:`, e)
-    return { slos: [] }
-  }
+  const res = await fetch(apiUrl(`/api/clusters/${cid}/slos`), { cache: "no-store" })
+  if (!res.ok) throw new Error(`Failed to fetch SLOs: ${res.status}`)
+  return res.json()
 }
 
 export async function createSLO(clusterId: string, slo: SLOItem): Promise<SLOItem> {
@@ -597,14 +568,9 @@ export async function deleteSLO(clusterId: string, sloId: string): Promise<void>
 
 export async function getSLAs(clusterId: string): Promise<{ slas: EvaluatedSLA[] }> {
   const cid = clusterId || "local-dev"
-  try {
-    const res = await fetch(apiUrl(`/api/clusters/${cid}/slas`), { cache: "no-store" })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return await res.json()
-  } catch (e) {
-    console.warn(`Failed to fetch SLAs for cluster ${cid}:`, e)
-    return { slas: [] }
-  }
+  const res = await fetch(apiUrl(`/api/clusters/${cid}/slas`), { cache: "no-store" })
+  if (!res.ok) throw new Error(`Failed to fetch SLAs: ${res.status}`)
+  return res.json()
 }
 
 export async function createSLA(clusterId: string, sla: SLAItem): Promise<SLAItem> {
@@ -626,14 +592,9 @@ export async function deleteSLA(clusterId: string, slaId: string): Promise<void>
 
 export async function getAlertPolicies(clusterId: string): Promise<{ policies: AlertPolicyItem[] }> {
   const cid = clusterId || "local-dev"
-  try {
-    const res = await fetch(apiUrl(`/api/clusters/${cid}/alerts/policies`), { cache: "no-store" })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return await res.json()
-  } catch (e) {
-    console.warn(`Failed to fetch alert policies for cluster ${cid}:`, e)
-    return { policies: [] }
-  }
+  const res = await fetch(apiUrl(`/api/clusters/${cid}/alerts/policies`), { cache: "no-store" })
+  if (!res.ok) throw new Error(`Failed to fetch alert policies: ${res.status}`)
+  return res.json()
 }
 
 export async function createAlertPolicy(clusterId: string, policy: AlertPolicyItem): Promise<AlertPolicyItem> {
@@ -647,6 +608,17 @@ export async function createAlertPolicy(clusterId: string, policy: AlertPolicyIt
   return res.json()
 }
 
+export async function updateAlertPolicy(clusterId: string, policyId: string, policy: Partial<AlertPolicyItem>): Promise<AlertPolicyItem> {
+  const cid = clusterId || "local-dev"
+  const res = await fetch(apiUrl(`/api/clusters/${cid}/alerts/policies/${policyId}`), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(policy),
+  })
+  if (!res.ok) throw new Error(`Failed to update alert policy: ${res.status}`)
+  return res.json()
+}
+
 export async function deleteAlertPolicy(clusterId: string, policyId: string): Promise<void> {
   const cid = clusterId || "local-dev"
   const res = await fetch(apiUrl(`/api/clusters/${cid}/alerts/policies/${policyId}`), { method: "DELETE" })
@@ -655,31 +627,17 @@ export async function deleteAlertPolicy(clusterId: string, policyId: string): Pr
 
 export async function getActiveAlerts(clusterId: string, status = ""): Promise<{ alerts: GarundAlert[] }> {
   const cid = clusterId || "local-dev"
-  try {
-    const query = status ? `?status=${status}` : ""
-    const res = await fetch(apiUrl(`/api/clusters/${cid}/alerts/active${query}`), { cache: "no-store" })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return await res.json()
-  } catch (e) {
-    console.warn(`Failed to fetch active alerts for cluster ${cid}:`, e)
-    return { alerts: [] }
-  }
+  const query = status ? `?status=${status}` : ""
+  const res = await fetch(apiUrl(`/api/clusters/${cid}/alerts/active${query}`), { cache: "no-store" })
+  if (!res.ok) throw new Error(`Failed to fetch active alerts: ${res.status}`)
+  return res.json()
 }
 
 export async function getPrometheusStatus(clusterId: string): Promise<PrometheusStatus> {
   const cid = clusterId || "local-dev"
-  try {
-    const res = await fetch(apiUrl(`/api/clusters/${cid}/prometheus/status`), { cache: "no-store" })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return await res.json()
-  } catch (e) {
-    console.warn(`Failed to fetch Prometheus status for cluster ${cid}:`, e)
-    return {
-      clusterId: cid,
-      url: "",
-      status: "UNKNOWN",
-    }
-  }
+  const res = await fetch(apiUrl(`/api/clusters/${cid}/prometheus/status`), { cache: "no-store" })
+  if (!res.ok) throw new Error(`Failed to fetch Prometheus status: ${res.status}`)
+  return res.json()
 }
 
 export async function updatePrometheusConfig(clusterId: string, url: string): Promise<void> {
