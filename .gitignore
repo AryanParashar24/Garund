@@ -6,3 +6,4 @@ frontend/.next/
 .env.*
 !.env.example
 backend/garund-backend
+bin/
