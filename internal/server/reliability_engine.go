@@ -17,12 +17,12 @@ type EvaluatedSLI struct {
 	Name             string    `json:"name"`
 	Type             string    `json:"type"`
 	Value            *float64  `json:"value"`
-	Target           float64   `json:"target"`
+	Target           *float64  `json:"target,omitempty"`
 	Unit             string    `json:"unit"`
 	GoodEvents       int64     `json:"goodEvents"`
 	TotalEvents      int64     `json:"totalEvents"`
 	EvaluationWindow string    `json:"evaluationWindow"`
-	Status           string    `json:"status"` // healthy, warning, critical, unavailable
+	Status           string    `json:"status"` // healthy, warning, critical, unavailable, no_data
 	Query            string    `json:"query"`
 	GoodQuery        string    `json:"goodQuery,omitempty"`
 	TotalQuery       string    `json:"totalQuery,omitempty"`
@@ -83,43 +83,62 @@ type FullReliabilityOverview struct {
 	} `json:"summary"`
 }
 
-func CalculateSLIStatus(value *float64, target float64, sliType string) string {
-	if value == nil {
+func CalculateSLIStatus(value *float64, target *float64, sliType string) string {
+	if value == nil || target == nil {
 		return "unavailable"
 	}
 
 	val := *value
+	tgt := *target
 
 	switch sliType {
 	case "availability":
-		if val >= target {
+		if val >= tgt {
 			return "healthy"
 		}
-		if target-val <= 0.5 {
+		if tgt-val <= 0.5 {
 			return "warning"
 		}
 		return "critical"
 
 	case "error_rate":
-		if val <= target {
+		if val <= tgt {
 			return "healthy"
 		}
-		if val-target <= 0.5 {
+		if val-tgt <= 0.5 {
 			return "warning"
 		}
 		return "critical"
 
 	case "latency":
-		if val <= target {
+		if val <= tgt {
 			return "healthy"
 		}
-		if val-target <= 50 {
+		if val-tgt <= 50 {
+			return "warning"
+		}
+		return "critical"
+
+	case "throughput":
+		if val >= tgt {
+			return "healthy"
+		}
+		if tgt-val <= 10 {
+			return "warning"
+		}
+		return "critical"
+
+	case "saturation":
+		if val <= tgt {
+			return "healthy"
+		}
+		if val-tgt <= 5 {
 			return "warning"
 		}
 		return "critical"
 
 	default:
-		if val >= target {
+		if val >= tgt {
 			return "healthy"
 		}
 		return "critical"
@@ -350,7 +369,7 @@ func calculateAvailabilitySLI(good, total float64, target float64, available boo
 	if val > 100 {
 		val = 100
 	}
-	status := CalculateSLIStatus(&val, target, "availability")
+	status := CalculateSLIStatus(&val, &target, "availability")
 	return LegacySLIMeasurement{
 		Value:       &val,
 		GoodEvents:  int64(good),
@@ -364,7 +383,7 @@ func calculateErrorRateSLI(bad, total float64, target float64, available bool) L
 		return LegacySLIMeasurement{Value: nil, Status: "unavailable"}
 	}
 	val := (bad / total) * 100
-	status := CalculateSLIStatus(&val, target, "error_rate")
+	status := CalculateSLIStatus(&val, &target, "error_rate")
 	return LegacySLIMeasurement{
 		Value:       &val,
 		GoodEvents:  int64(bad),
@@ -377,7 +396,7 @@ func calculateLatencySLI(val float64, target float64, available bool) LegacySLIM
 	if !available || val <= 0 {
 		return LegacySLIMeasurement{Value: nil, Status: "unavailable"}
 	}
-	status := CalculateSLIStatus(&val, target, "latency")
+	status := CalculateSLIStatus(&val, &target, "latency")
 	return LegacySLIMeasurement{
 		Value:  &val,
 		Status: status,

@@ -51,32 +51,19 @@ func getAlertmanagerClientForCluster(clusterID string) *AlertmanagerClient {
 
 var PagerDutyEndpoint = "https://events.pagerduty.com/v2/enqueue"
 
-func resolveSLITarget(item SLIItem, store *ReliabilityStore, clusterID string) float64 {
+func resolveSLITarget(item SLIItem, store *ReliabilityStore, clusterID string) *float64 {
 	if item.Target > 0 {
-		return item.Target
+		return &item.Target
 	}
 	if store != nil {
 		slos := store.ListSLOs(clusterID)
 		for _, slo := range slos {
 			if slo.SLIID == item.ID && slo.Target > 0 {
-				return slo.Target
+				return &slo.Target
 			}
 		}
 	}
-	switch item.Type {
-	case "availability":
-		return 99.9
-	case "error_rate":
-		return 0.1
-	case "latency":
-		return 300.0
-	case "throughput":
-		return 100.0
-	case "saturation":
-		return 80.0
-	default:
-		return 99.0
-	}
+	return nil
 }
 
 func GenerateAlertFingerprint(clusterID, namespace, service, policyID, sloID, sliID string) string {
@@ -351,16 +338,73 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "SLI not found"})
 			return
 		}
+
+		if c.Request.Method == http.MethodPatch {
+			var raw map[string]interface{}
+			if err := c.ShouldBindJSON(&raw); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			updated := existing
+			if v, ok := raw["name"].(string); ok {
+				updated.Name = v
+			}
+			if v, ok := raw["description"].(string); ok {
+				updated.Description = v
+			}
+			if v, ok := raw["service"].(string); ok {
+				updated.Service = v
+			}
+			if v, ok := raw["namespace"].(string); ok {
+				updated.Namespace = v
+			}
+			if v, ok := raw["type"].(string); ok {
+				updated.Type = v
+			}
+			if v, ok := raw["target"].(float64); ok {
+				updated.Target = v
+			}
+			if v, ok := raw["query"].(string); ok {
+				updated.Query = v
+			}
+			if v, ok := raw["goodQuery"].(string); ok {
+				updated.GoodQuery = v
+			}
+			if v, ok := raw["totalQuery"].(string); ok {
+				updated.TotalQuery = v
+			}
+			if v, ok := raw["unit"].(string); ok {
+				updated.Unit = v
+			}
+			if v, ok := raw["evaluationWindow"].(string); ok {
+				updated.EvaluationWindow = v
+			}
+			if v, ok := raw["enabled"].(bool); ok {
+				updated.Enabled = v
+			}
+
+			// Force immutability of identity and ownership fields
+			updated.ID = sliID
+			updated.ClusterID = clusterID
+			updated.CreatedAt = existing.CreatedAt
+			updated.UpdatedAt = time.Now()
+
+			saved := store.SaveSLI(updated)
+			c.JSON(http.StatusOK, saved)
+			return
+		}
+
 		var item SLIItem
 		if err := c.ShouldBindJSON(&item); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		// Force immutability of identity and ownership fields
 		item.ID = sliID
 		item.ClusterID = clusterID
-		if item.CreatedAt.IsZero() {
-			item.CreatedAt = existing.CreatedAt
-		}
+		item.CreatedAt = existing.CreatedAt
+		item.UpdatedAt = time.Now()
+
 		saved := store.SaveSLI(item)
 		c.JSON(http.StatusOK, saved)
 	}
@@ -1380,11 +1424,15 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 		errMeasurement := calculateErrorRateSLI(errorRequests, totalRequests, 0.1, totalAvailable && errorAvailable)
 		latMeasurement := calculateLatencySLI(latency, 300.0, latencyAvailable)
 
+		t999 := 99.9
+		t300 := 300.0
+		t01 := 0.1
+
 		availSLI := EvaluatedSLI{
 			Name:             "Availability",
 			Type:             "availability",
 			Value:            availMeasurement.Value,
-			Target:           99.9,
+			Target:           &t999,
 			Unit:             "%",
 			GoodEvents:       availMeasurement.GoodEvents,
 			TotalEvents:      availMeasurement.TotalEvents,
@@ -1397,7 +1445,7 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 			Name:             "Latency",
 			Type:             "latency",
 			Value:            latMeasurement.Value,
-			Target:           300.0,
+			Target:           &t300,
 			Unit:             "ms",
 			EvaluationWindow: "5m",
 			Status:           latMeasurement.Status,
@@ -1408,7 +1456,7 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 			Name:             "Error Rate",
 			Type:             "error_rate",
 			Value:            errMeasurement.Value,
-			Target:           0.1,
+			Target:           &t01,
 			Unit:             "%",
 			GoodEvents:       errMeasurement.GoodEvents,
 			TotalEvents:      errMeasurement.TotalEvents,

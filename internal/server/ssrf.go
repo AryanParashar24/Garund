@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	privateIPBlocks        []*net.IPNet
+	privateIPBlocks         []*net.IPNet
 	AllowLoopbackForTesting = false
 )
 

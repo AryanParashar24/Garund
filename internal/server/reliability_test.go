@@ -666,34 +666,36 @@ func TestTestAlertDeliveryTruthfulness(t *testing.T) {
 	}
 }
 
+func floatPtr(v float64) *float64 { return &v }
+
 func TestSLIStatusEvaluationSemantics(t *testing.T) {
 	// Availability (higher is better)
 	valAvailHigh := 99.95
 	valAvailLow := 98.0
-	if status := CalculateSLIStatus(&valAvailHigh, 99.9, "availability"); status != "healthy" {
+	if status := CalculateSLIStatus(&valAvailHigh, floatPtr(99.9), "availability"); status != "healthy" {
 		t.Errorf("expected healthy for availability 99.95 vs target 99.9, got %s", status)
 	}
-	if status := CalculateSLIStatus(&valAvailLow, 99.9, "availability"); status != "critical" {
+	if status := CalculateSLIStatus(&valAvailLow, floatPtr(99.9), "availability"); status != "critical" {
 		t.Errorf("expected critical for availability 98.0 vs target 99.9, got %s", status)
 	}
 
 	// Error Rate (lower is better)
 	valErrLow := 0.05
 	valErrHigh := 2.5
-	if status := CalculateSLIStatus(&valErrLow, 0.1, "error_rate"); status != "healthy" {
+	if status := CalculateSLIStatus(&valErrLow, floatPtr(0.1), "error_rate"); status != "healthy" {
 		t.Errorf("expected healthy for error rate 0.05 vs target 0.1, got %s", status)
 	}
-	if status := CalculateSLIStatus(&valErrHigh, 0.1, "error_rate"); status != "critical" {
+	if status := CalculateSLIStatus(&valErrHigh, floatPtr(0.1), "error_rate"); status != "critical" {
 		t.Errorf("expected critical for error rate 2.5 vs target 0.1, got %s", status)
 	}
 
 	// Latency (lower is better)
 	valLatLow := 150.0
 	valLatHigh := 500.0
-	if status := CalculateSLIStatus(&valLatLow, 300.0, "latency"); status != "healthy" {
+	if status := CalculateSLIStatus(&valLatLow, floatPtr(300.0), "latency"); status != "healthy" {
 		t.Errorf("expected healthy for latency 150ms vs target 300ms, got %s", status)
 	}
-	if status := CalculateSLIStatus(&valLatHigh, 300.0, "latency"); status != "critical" {
+	if status := CalculateSLIStatus(&valLatHigh, floatPtr(300.0), "latency"); status != "critical" {
 		t.Errorf("expected critical for latency 500ms vs target 300ms, got %s", status)
 	}
 }
@@ -702,13 +704,13 @@ func TestConfiguredTargetPreservation(t *testing.T) {
 	val := 99.94
 
 	// When evaluated against default 99.9% target, 99.94% is HEALTHY
-	status999 := CalculateSLIStatus(&val, 99.9, "availability")
+	status999 := CalculateSLIStatus(&val, floatPtr(99.9), "availability")
 	if status999 != "healthy" {
 		t.Errorf("expected 99.94%% vs 99.9%% target to be healthy, got %s", status999)
 	}
 
 	// When evaluated against configured 99.95% target, 99.94% is NOT healthy (it's warning)
-	status9995 := CalculateSLIStatus(&val, 99.95, "availability")
+	status9995 := CalculateSLIStatus(&val, floatPtr(99.95), "availability")
 	if status9995 == "healthy" {
 		t.Errorf("expected 99.94%% vs 99.95%% target to NOT be healthy, got %s", status9995)
 	}
@@ -725,8 +727,8 @@ func TestConfiguredTargetPreservation(t *testing.T) {
 	})
 
 	target := resolveSLITarget(sli, store, "c1")
-	if target != 99.99 {
-		t.Errorf("expected resolveSLITarget to return SLI explicit target 99.99, got %f", target)
+	if target == nil || *target != 99.99 {
+		t.Errorf("expected resolveSLITarget to return SLI explicit target 99.99, got %v", target)
 	}
 
 	// Test resolveSLITarget falls back to associated SLO target if SLI target is 0
@@ -748,7 +750,122 @@ func TestConfiguredTargetPreservation(t *testing.T) {
 	})
 
 	target2 := resolveSLITarget(sli2, store, "c1")
-	if target2 != 99.95 {
-		t.Errorf("expected resolveSLITarget to return associated SLO target 99.95, got %f", target2)
+	if target2 == nil || *target2 != 99.95 {
+		t.Errorf("expected resolveSLITarget to return associated SLO target 99.95, got %v", target2)
+	}
+}
+
+func TestMissingTargetNoFabricatedDefaults(t *testing.T) {
+	store := NewReliabilityStore(t.TempDir() + "/test-store.json")
+
+	types := []string{"availability", "error_rate", "latency", "throughput", "saturation"}
+	for _, stype := range types {
+		sli := store.SaveSLI(SLIItem{
+			Name:      "Unconfigured SLI " + stype,
+			ClusterID: "c-no-target",
+			Service:   "demo",
+			Namespace: "default",
+			Type:      stype,
+			Target:    0,
+		})
+
+		target := resolveSLITarget(sli, store, "c-no-target")
+		if target != nil {
+			t.Fatalf("expected nil target for type %s without config, got %f", stype, *target)
+		}
+
+		val := 99.9
+		status := CalculateSLIStatus(&val, target, stype)
+		if status != "unavailable" {
+			t.Fatalf("expected status 'unavailable' for unconfigured target of type %s, got %s", stype, status)
+		}
+	}
+}
+
+func TestSLIUpdateImmutabilityAndPatch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	RegisterReliabilityRoutes(router)
+
+	clusterID := "cluster-immutability-test"
+	sliID := "sli-orig-123"
+
+	// Create initial SLI
+	initJSON := `{
+		"id": "` + sliID + `",
+		"name": "Original SLI",
+		"service": "checkout",
+		"namespace": "prod",
+		"type": "availability",
+		"target": 99.9,
+		"query": "up",
+		"enabled": true
+	}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/clusters/"+clusterID+"/slis", bytes.NewBufferString(initJSON))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("failed to create initial SLI, got code %d", w.Code)
+	}
+
+	var created SLIItem
+	_ = json.Unmarshal(w.Body.Bytes(), &created)
+	createdTime := created.CreatedAt
+
+	// Test 1: PUT attempting to change ID, ClusterID, and CreatedAt
+	putPayload := `{
+		"id": "hacked-id",
+		"clusterId": "hacked-cluster",
+		"name": "Updated Name via PUT",
+		"service": "checkout",
+		"namespace": "prod",
+		"type": "availability",
+		"target": 99.95,
+		"query": "up"
+	}`
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("PUT", "/api/clusters/"+clusterID+"/slis/"+sliID, bytes.NewBufferString(putPayload))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for PUT update, got %d", w.Code)
+	}
+
+	var putRes SLIItem
+	_ = json.Unmarshal(w.Body.Bytes(), &putRes)
+	if putRes.ID != sliID {
+		t.Errorf("PUT allowed changing ID! Expected %s, got %s", sliID, putRes.ID)
+	}
+	if putRes.ClusterID != clusterID {
+		t.Errorf("PUT allowed changing ClusterID! Expected %s, got %s", clusterID, putRes.ClusterID)
+	}
+	if !putRes.CreatedAt.Equal(createdTime) {
+		t.Errorf("PUT allowed changing CreatedAt! Expected %v, got %v", createdTime, putRes.CreatedAt)
+	}
+	if putRes.Name != "Updated Name via PUT" || putRes.Target != 99.95 {
+		t.Errorf("PUT failed to update legitimate config fields, got name: %s, target: %f", putRes.Name, putRes.Target)
+	}
+
+	// Test 2: PATCH partial update with target only -> preserves Name, Query, Service, Namespace
+	patchPayload := `{"target": 99.99}`
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("PATCH", "/api/clusters/"+clusterID+"/slis/"+sliID, bytes.NewBufferString(patchPayload))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for PATCH update, got %d", w.Code)
+	}
+
+	var patchRes SLIItem
+	_ = json.Unmarshal(w.Body.Bytes(), &patchRes)
+	if patchRes.Target != 99.99 {
+		t.Errorf("PATCH failed to update target! Expected 99.99, got %f", patchRes.Target)
+	}
+	if patchRes.Name != "Updated Name via PUT" || patchRes.Service != "checkout" || patchRes.Namespace != "prod" || patchRes.Query != "up" {
+		t.Errorf("PATCH erased unsupplied fields! Got name: %s, service: %s, namespace: %s, query: %s", patchRes.Name, patchRes.Service, patchRes.Namespace, patchRes.Query)
+	}
+	if patchRes.ID != sliID || patchRes.ClusterID != clusterID {
+		t.Errorf("PATCH altered immutable identity fields! Got ID: %s, ClusterID: %s", patchRes.ID, patchRes.ClusterID)
 	}
 }

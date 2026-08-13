@@ -15,7 +15,7 @@ export interface EvaluatedSLI {
   name: string
   type: SLIType
   value: number | null
-  target: number
+  target: number | null
   unit: string
   goodEvents?: number
   totalEvents?: number
