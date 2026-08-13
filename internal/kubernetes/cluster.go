@@ -27,18 +27,18 @@ const (
 type ConnectionMode string
 
 const (
-	ModeLocalKubeconfig      ConnectionMode = "local_kubeconfig"
-	ModeAgent                ConnectionMode = "agent"
-	ModeServiceAccountToken  ConnectionMode = "service_account_token"
+	ModeLocalKubeconfig     ConnectionMode = "local_kubeconfig"
+	ModeAgent               ConnectionMode = "agent"
+	ModeServiceAccountToken ConnectionMode = "service_account_token"
 )
 
 type CapabilitySet struct {
-	CanReadWorkloads  bool `json:"canReadWorkloads"`
-	CanReadLogs       bool `json:"canReadLogs"`
-	CanReadEvents     bool `json:"canReadEvents"`
-	CanReadTelemetry  bool `json:"canReadTelemetry"`
+	CanReadWorkloads    bool `json:"canReadWorkloads"`
+	CanReadLogs         bool `json:"canReadLogs"`
+	CanReadEvents       bool `json:"canReadEvents"`
+	CanReadTelemetry    bool `json:"canReadTelemetry"`
 	CanOperateWorkloads bool `json:"canOperateWorkloads"`
-	CanAdminister     bool `json:"canAdminister"`
+	CanAdminister       bool `json:"canAdminister"`
 }
 
 type ClusterConnection struct {
@@ -298,7 +298,7 @@ func BuildClientFromToken(apiServerHost string, bearerToken string, caData []byt
 		Host:        apiServerHost,
 		BearerToken: bearerToken,
 		TLSClientConfig: rest.TLSClientConfig{
-			CAData: caData,
+			CAData:   caData,
 			Insecure: len(caData) == 0,
 		},
 	}

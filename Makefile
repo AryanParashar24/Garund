@@ -1,26 +1,41 @@
-.PHONY: all build test dev agent clean
+VERSION ?= v0.1.0
+COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+LDFLAGS := -X github.com/garund/garund/internal/buildinfo.Version=$(VERSION) \
+           -X github.com/garund/garund/internal/buildinfo.Commit=$(COMMIT) \
+           -X github.com/garund/garund/internal/buildinfo.BuildDate=$(BUILD_DATE)
+
+.PHONY: all build build-frontend build-server build-agent test lint dev clean release
 
 all: build
 
-build: build-server build-agent build-frontend
+build-frontend:
+	@echo "Building Next.js static frontend..."
+	cd frontend && NEXT_PUBLIC_API_BASE_URL="" npm run build
+	@mkdir -p internal/web/dist
+	rm -rf internal/web/dist/*
+	cp -r frontend/out/* internal/web/dist/
 
 build-server:
-	@echo "Building Garund Control Plane binary..."
+	@echo "Building Garund Control Plane CLI binary..."
 	@mkdir -p bin
-	go build -o bin/garund ./main.go
+	go build -ldflags "$(LDFLAGS)" -o bin/garund ./main.go
 
 build-agent:
 	@echo "Building Garund Agent binary..."
 	@mkdir -p bin
-	go build -o bin/garund-agent ./cmd/garund-agent/main.go
+	go build -ldflags "$(LDFLAGS)" -o bin/garund-agent ./cmd/garund-agent/main.go
 
-build-frontend:
-	@echo "Building Next.js frontend..."
-	cd frontend && npm run build
+build: build-frontend build-server build-agent
 
 test:
 	@echo "Running backend unit tests..."
 	go test -v ./...
+
+lint:
+	@echo "Running go vet..."
+	go vet ./...
 
 dev-server:
 	go run ./main.go
@@ -29,12 +44,20 @@ dev-frontend:
 	cd frontend && npm run dev
 
 dev:
-	@echo "Starting Garund Multi-Cluster Platform in development mode..."
+	@echo "Starting Garund in development mode..."
 	make -j2 dev-server dev-frontend
 
-agent: build-agent
-	@echo "Running local Garund Agent..."
-	./bin/garund-agent
+release: build-frontend
+	@echo "Building release binaries for all target platforms..."
+	@mkdir -p dist
+	rm -rf dist/*
+	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o dist/garund-linux-amd64 ./main.go
+	GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o dist/garund-linux-arm64 ./main.go
+	GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o dist/garund-darwin-amd64 ./main.go
+	GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o dist/garund-darwin-arm64 ./main.go
+	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o dist/garund-windows-amd64.exe ./main.go
+	@cd dist && sha256sum * > SHA256SUMS
+	@echo "Release build complete in dist/"
 
 clean:
-	rm -rf bin/
+	rm -rf bin/ dist/ internal/web/dist/*

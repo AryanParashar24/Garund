@@ -16,10 +16,10 @@ import (
 
 // Check represents a single diagnostic result.
 type Check struct {
-	Name    string
-	Passed  bool
-	Detail  string
-	Remedy  string
+	Name   string
+	Passed bool
+	Detail string
+	Remedy string
 }
 
 // Report holds all diagnostic checks.

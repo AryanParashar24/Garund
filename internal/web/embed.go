@@ -48,3 +48,17 @@ func RegisterRoutes(router *gin.Engine) {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", data)
 	})
 }
+
+// HasAssets checks whether embedded frontend static assets (index.html) are available.
+func HasAssets() bool {
+	sub, err := fs.Sub(dist, "dist")
+	if err != nil {
+		return false
+	}
+	f, err := sub.Open("index.html")
+	if err != nil {
+		return false
+	}
+	_ = f.Close()
+	return true
+}
