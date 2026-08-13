@@ -40,7 +40,17 @@ install: build
 	@mkdir -p $(HOME)/.local/bin
 	@cp bin/garund $(HOME)/.local/bin/garund
 	@echo "\n✓ Garund installed successfully to $(HOME)/.local/bin/garund"
-	@echo "  Run 'garund start' to launch!\n"
+	@if echo ":$$PATH:" | grep -q ":$(HOME)/.local/bin:"; then \
+		echo "  Run 'garund start' to launch!\n"; \
+	else \
+		echo "\nNotice: ~/.local/bin is not in your current PATH."; \
+		echo "  To run 'garund' directly, add it to your PATH:"; \
+		echo "      export PATH=\"\$$HOME/.local/bin:\$$PATH\"\n"; \
+		echo "  Or install system-wide (requires sudo):"; \
+		echo "      sudo cp bin/garund /usr/local/bin/garund\n"; \
+		echo "  Or run directly using full path:"; \
+		echo "      ~/.local/bin/garund start\n"; \
+	fi
 
 test:
 	@echo "Running backend unit tests..."
