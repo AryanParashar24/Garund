@@ -63,12 +63,36 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 echo "Downloading ${BINARY_NAME}..."
+DOWNLOAD_SUCCESS=0
+
 if command -v curl >/dev/null 2>&1; then
-  curl -fsSL "$RELEASE_URL" -o "${TMP_DIR}/garund"
+  if curl -fsSL "$RELEASE_URL" -o "${TMP_DIR}/garund"; then
+    DOWNLOAD_SUCCESS=1
+  fi
 elif command -v wget >/dev/null 2>&1; then
-  wget -qO "${TMP_DIR}/garund" "$RELEASE_URL"
+  if wget -qO "${TMP_DIR}/garund" "$RELEASE_URL"; then
+    DOWNLOAD_SUCCESS=1
+  fi
 else
   echo "Error: Neither curl nor wget is available."
+  exit 1
+fi
+
+if [ "$DOWNLOAD_SUCCESS" -ne 1 ]; then
+  echo ""
+  echo "Error: Could not download pre-compiled binary '${BINARY_NAME}' from GitHub Releases."
+  echo ""
+  echo "Why this happened:"
+  echo "  No GitHub Release assets exist yet under https://github.com/${REPO}/releases."
+  echo ""
+  echo "To resolve:"
+  echo "  1. Publish a GitHub Release (e.g. tag 'v0.1.0'), OR"
+  echo "  2. Build from source locally:"
+  echo "         git clone https://github.com/${REPO}.git"
+  echo "         cd Garund"
+  echo "         make build"
+  echo "         cp bin/garund ${TARGET_BIN}"
+  echo ""
   exit 1
 fi
 
