@@ -592,14 +592,18 @@ export async function deleteSLA(clusterId: string, slaId: string): Promise<void>
 
 export async function getAlertPolicies(clusterId: string): Promise<{ policies: AlertPolicyItem[] }> {
   const cid = clusterId || "local-dev"
-  const res = await fetch(apiUrl(`/api/clusters/${cid}/alerts/policies`), { cache: "no-store" })
+  const res = await fetch(apiUrl(`/api/clusters/${cid}/alert-policies`), { cache: "no-store" })
   if (!res.ok) throw new Error(`Failed to fetch alert policies: ${res.status}`)
-  return res.json()
+  const data = await res.json()
+  if (Array.isArray(data)) {
+    return { policies: data }
+  }
+  return data
 }
 
 export async function createAlertPolicy(clusterId: string, policy: AlertPolicyItem): Promise<AlertPolicyItem> {
   const cid = clusterId || "local-dev"
-  const res = await fetch(apiUrl(`/api/clusters/${cid}/alerts/policies`), {
+  const res = await fetch(apiUrl(`/api/clusters/${cid}/alert-policies`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(policy),
@@ -610,7 +614,7 @@ export async function createAlertPolicy(clusterId: string, policy: AlertPolicyIt
 
 export async function updateAlertPolicy(clusterId: string, policyId: string, policy: Partial<AlertPolicyItem>): Promise<AlertPolicyItem> {
   const cid = clusterId || "local-dev"
-  const res = await fetch(apiUrl(`/api/clusters/${cid}/alerts/policies/${policyId}`), {
+  const res = await fetch(apiUrl(`/api/clusters/${cid}/alert-policies/${policyId}`), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(policy),
@@ -621,7 +625,7 @@ export async function updateAlertPolicy(clusterId: string, policyId: string, pol
 
 export async function deleteAlertPolicy(clusterId: string, policyId: string): Promise<void> {
   const cid = clusterId || "local-dev"
-  const res = await fetch(apiUrl(`/api/clusters/${cid}/alerts/policies/${policyId}`), { method: "DELETE" })
+  const res = await fetch(apiUrl(`/api/clusters/${cid}/alert-policies/${policyId}`), { method: "DELETE" })
   if (!res.ok) throw new Error(`Failed to delete alert policy: ${res.status}`)
 }
 
@@ -708,7 +712,7 @@ export async function deleteNotificationDestination(clusterId: string, destId: s
 
 export async function testAlertPolicy(clusterId: string, policyId: string): Promise<{ message: string; alert: GarundAlert }> {
   const cid = clusterId || "local-dev"
-  const res = await fetch(apiUrl(`/api/clusters/${cid}/alerts/policies/${policyId}/test`), { method: "POST" })
+  const res = await fetch(apiUrl(`/api/clusters/${cid}/alert-policies/${policyId}/test`), { method: "POST" })
   if (!res.ok) throw new Error(`Failed to trigger test alert: ${res.status}`)
   return res.json()
 }

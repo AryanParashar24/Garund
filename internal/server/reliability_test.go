@@ -395,5 +395,85 @@ func TestAlertPolicyCRUDAndClusterIsolation(t *testing.T) {
 	}
 }
 
+func TestAlertPoliciesCanonicalRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	RegisterReliabilityRoutes(router)
+
+	// 1. Empty policy list -> HTTP 200 []
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/clusters/test-cluster-x/alert-policies", nil)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for /api/clusters/test-cluster-x/alert-policies, got %d", w.Code)
+	}
+	if w.Body.String() != "[]" {
+		t.Fatalf("expected empty array '[]', got '%s'", w.Body.String())
+	}
+
+	// 2. Create policy
+	newPolicyJSON := `{
+		"name": "Canonical Policy Test",
+		"conditionType": "burn_rate",
+		"threshold": 2.0,
+		"severity": "P1",
+		"enabled": true
+	}`
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("POST", "/api/clusters/test-cluster-x/alert-policies", bytes.NewBufferString(newPolicyJSON))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var created AlertPolicyItem
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to unmarshal created policy: %v", err)
+	}
+
+	// 3. GET request -> returns array with policy
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/api/clusters/test-cluster-x/alert-policies", nil)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", w.Code)
+	}
+	var list []AlertPolicyItem
+	if err := json.Unmarshal(w.Body.Bytes(), &list); err != nil {
+		t.Fatalf("failed to unmarshal array: %v", err)
+	}
+	if len(list) != 1 || list[0].ID != created.ID {
+		t.Fatalf("expected 1 policy in array, got %d", len(list))
+	}
+
+	// 4. Cluster isolation: test-cluster-y must return []
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/api/clusters/test-cluster-y/alert-policies", nil)
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || w.Body.String() != "[]" {
+		t.Fatalf("expected [] for isolated cluster y, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// 5. Delete policy
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("DELETE", "/api/clusters/test-cluster-x/alert-policies/"+created.ID, nil)
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on delete, got %d", w.Code)
+	}
+
+	// 6. GET request -> returns []
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/api/clusters/test-cluster-x/alert-policies", nil)
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || w.Body.String() != "[]" {
+		t.Fatalf("expected [] after deletion, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 
 

@@ -261,16 +261,16 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 	})
 
 	// 4. Alert Policy & Active Alert endpoints
-	router.GET("/api/clusters/:id/alerts/policies", func(c *gin.Context) {
+	listPoliciesHandler := func(c *gin.Context) {
 		clusterID := c.Param("id")
 		policies := store.ListAlertPolicies(clusterID)
-		c.JSON(http.StatusOK, gin.H{
-			"clusterId": clusterID,
-			"policies":  policies,
-		})
-	})
+		if policies == nil {
+			policies = []AlertPolicyItem{}
+		}
+		c.JSON(http.StatusOK, policies)
+	}
 
-	router.GET("/api/clusters/:id/alerts/policies/:policyId", func(c *gin.Context) {
+	getPolicyHandler := func(c *gin.Context) {
 		clusterID := c.Param("id")
 		policyID := c.Param("policyId")
 		policy, found := store.GetAlertPolicy(policyID)
@@ -279,9 +279,9 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 			return
 		}
 		c.JSON(http.StatusOK, policy)
-	})
+	}
 
-	router.POST("/api/clusters/:id/alerts/policies", func(c *gin.Context) {
+	createPolicyHandler := func(c *gin.Context) {
 		clusterID := c.Param("id")
 		var item AlertPolicyItem
 		if err := c.ShouldBindJSON(&item); err != nil {
@@ -291,7 +291,7 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 		item.ClusterID = clusterID
 		saved := store.SaveAlertPolicy(item)
 		c.JSON(http.StatusCreated, saved)
-	})
+	}
 
 	updatePolicyHandler := func(c *gin.Context) {
 		clusterID := c.Param("id")
@@ -315,10 +315,7 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 		c.JSON(http.StatusOK, saved)
 	}
 
-	router.PUT("/api/clusters/:id/alerts/policies/:policyId", updatePolicyHandler)
-	router.PATCH("/api/clusters/:id/alerts/policies/:policyId", updatePolicyHandler)
-
-	router.POST("/api/clusters/:id/alerts/policies/:policyId/test", func(c *gin.Context) {
+	testPolicyHandler := func(c *gin.Context) {
 		policyID := c.Param("policyId")
 		clusterID := c.Param("id")
 		existing, found := store.GetAlertPolicy(policyID)
@@ -332,9 +329,9 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 			"delivered": true,
 			"timestamp": time.Now(),
 		})
-	})
+	}
 
-	router.DELETE("/api/clusters/:id/alerts/policies/:policyId", func(c *gin.Context) {
+	deletePolicyHandler := func(c *gin.Context) {
 		clusterID := c.Param("id")
 		policyID := c.Param("policyId")
 		existing, found := store.GetAlertPolicy(policyID)
@@ -347,7 +344,35 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 		} else {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Alert policy not found"})
 		}
+	}
+
+	// Canonical REST endpoint: /api/clusters/:id/alert-policies
+	router.GET("/api/clusters/:id/alert-policies", listPoliciesHandler)
+	router.GET("/api/clusters/:id/alert-policies/:policyId", getPolicyHandler)
+	router.POST("/api/clusters/:id/alert-policies", createPolicyHandler)
+	router.PUT("/api/clusters/:id/alert-policies/:policyId", updatePolicyHandler)
+	router.PATCH("/api/clusters/:id/alert-policies/:policyId", updatePolicyHandler)
+	router.POST("/api/clusters/:id/alert-policies/:policyId/test", testPolicyHandler)
+	router.DELETE("/api/clusters/:id/alert-policies/:policyId", deletePolicyHandler)
+
+	// Legacy alias endpoint: /api/clusters/:id/alerts/policies
+	router.GET("/api/clusters/:id/alerts/policies", func(c *gin.Context) {
+		clusterID := c.Param("id")
+		policies := store.ListAlertPolicies(clusterID)
+		if policies == nil {
+			policies = []AlertPolicyItem{}
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"clusterId": clusterID,
+			"policies":  policies,
+		})
 	})
+	router.GET("/api/clusters/:id/alerts/policies/:policyId", getPolicyHandler)
+	router.POST("/api/clusters/:id/alerts/policies", createPolicyHandler)
+	router.PUT("/api/clusters/:id/alerts/policies/:policyId", updatePolicyHandler)
+	router.PATCH("/api/clusters/:id/alerts/policies/:policyId", updatePolicyHandler)
+	router.POST("/api/clusters/:id/alerts/policies/:policyId/test", testPolicyHandler)
+	router.DELETE("/api/clusters/:id/alerts/policies/:policyId", deletePolicyHandler)
 
 	router.GET("/api/clusters/:id/alerts/active", func(c *gin.Context) {
 		clusterID := c.Param("id")
