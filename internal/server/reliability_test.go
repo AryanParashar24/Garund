@@ -609,7 +609,7 @@ func TestTestAlertDeliveryTruthfulness(t *testing.T) {
 	router := gin.New()
 	RegisterReliabilityRoutes(router)
 
-	clusterID := "test-cluster-delivery"
+	clusterID := fmt.Sprintf("cluster-deliv-%d", time.Now().UnixNano())
 
 	// Create policy
 	polJSON := `{
@@ -698,6 +698,57 @@ func TestSLIStatusEvaluationSemantics(t *testing.T) {
 	}
 }
 
+func TestConfiguredTargetPreservation(t *testing.T) {
+	val := 99.94
 
+	// When evaluated against default 99.9% target, 99.94% is HEALTHY
+	status999 := CalculateSLIStatus(&val, 99.9, "availability")
+	if status999 != "healthy" {
+		t.Errorf("expected 99.94%% vs 99.9%% target to be healthy, got %s", status999)
+	}
 
+	// When evaluated against configured 99.95% target, 99.94% is NOT healthy (it's warning)
+	status9995 := CalculateSLIStatus(&val, 99.95, "availability")
+	if status9995 == "healthy" {
+		t.Errorf("expected 99.94%% vs 99.95%% target to NOT be healthy, got %s", status9995)
+	}
 
+	// Test resolveSLITarget honors SLI target and SLO target
+	store := NewReliabilityStore(t.TempDir() + "/test-store.json")
+	sli := store.SaveSLI(SLIItem{
+		Name:      "Custom Target SLI",
+		ClusterID: "c1",
+		Service:   "payment",
+		Namespace: "prod",
+		Type:      "availability",
+		Target:    99.99,
+	})
+
+	target := resolveSLITarget(sli, store, "c1")
+	if target != 99.99 {
+		t.Errorf("expected resolveSLITarget to return SLI explicit target 99.99, got %f", target)
+	}
+
+	// Test resolveSLITarget falls back to associated SLO target if SLI target is 0
+	sli2 := store.SaveSLI(SLIItem{
+		Name:      "SLO Target SLI",
+		ClusterID: "c1",
+		Service:   "cart",
+		Namespace: "prod",
+		Type:      "availability",
+		Target:    0,
+	})
+	_ = store.SaveSLO(SLOItem{
+		Name:      "Cart SLO",
+		ClusterID: "c1",
+		Service:   "cart",
+		Namespace: "prod",
+		SLIID:     sli2.ID,
+		Target:    99.95,
+	})
+
+	target2 := resolveSLITarget(sli2, store, "c1")
+	if target2 != 99.95 {
+		t.Errorf("expected resolveSLITarget to return associated SLO target 99.95, got %f", target2)
+	}
+}

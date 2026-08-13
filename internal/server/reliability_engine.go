@@ -13,19 +13,19 @@ type MultiWindowBurnRate struct {
 }
 
 type EvaluatedSLI struct {
-	ID               string   `json:"id"`
-	Name             string   `json:"name"`
-	Type             string   `json:"type"`
-	Value            *float64 `json:"value"`
-	Target           float64  `json:"target"`
-	Unit             string   `json:"unit"`
-	GoodEvents       int64    `json:"goodEvents"`
-	TotalEvents      int64    `json:"totalEvents"`
-	EvaluationWindow string   `json:"evaluationWindow"`
-	Status           string   `json:"status"` // healthy, warning, critical, unavailable
-	Query            string   `json:"query"`
-	GoodQuery        string   `json:"goodQuery,omitempty"`
-	TotalQuery       string   `json:"totalQuery,omitempty"`
+	ID               string    `json:"id"`
+	Name             string    `json:"name"`
+	Type             string    `json:"type"`
+	Value            *float64  `json:"value"`
+	Target           float64   `json:"target"`
+	Unit             string    `json:"unit"`
+	GoodEvents       int64     `json:"goodEvents"`
+	TotalEvents      int64     `json:"totalEvents"`
+	EvaluationWindow string    `json:"evaluationWindow"`
+	Status           string    `json:"status"` // healthy, warning, critical, unavailable
+	Query            string    `json:"query"`
+	GoodQuery        string    `json:"goodQuery,omitempty"`
+	TotalQuery       string    `json:"totalQuery,omitempty"`
 	EvaluatedAt      time.Time `json:"evaluatedAt"`
 }
 
@@ -53,15 +53,15 @@ type EvaluatedSLO struct {
 }
 
 type EvaluatedSLA struct {
-	ID                 string   `json:"id"`
-	Name               string   `json:"name"`
-	Service            string   `json:"service"`
-	Namespace          string   `json:"namespace"`
-	AvailabilityTarget *float64 `json:"availabilityTarget,omitempty"`
-	LatencyTargetMs    *float64 `json:"latencyTargetMs,omitempty"`
-	Window             string   `json:"window"`
-	SafetyMargin       *float64 `json:"safetyMargin,omitempty"` // percentage points margin over SLA
-	Status             string   `json:"status"`               // compliant, at_risk, breached, unavailable
+	ID                 string    `json:"id"`
+	Name               string    `json:"name"`
+	Service            string    `json:"service"`
+	Namespace          string    `json:"namespace"`
+	AvailabilityTarget *float64  `json:"availabilityTarget,omitempty"`
+	LatencyTargetMs    *float64  `json:"latencyTargetMs,omitempty"`
+	Window             string    `json:"window"`
+	SafetyMargin       *float64  `json:"safetyMargin,omitempty"` // percentage points margin over SLA
+	Status             string    `json:"status"`                 // compliant, at_risk, breached, unavailable
 	EvaluatedAt        time.Time `json:"evaluatedAt"`
 }
 

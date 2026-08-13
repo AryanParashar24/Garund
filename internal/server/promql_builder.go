@@ -25,12 +25,12 @@ type PromQLOutput struct {
 }
 
 type QueryValidationResult struct {
-	Valid          bool     `json:"valid"`
-	CurrentValue   *float64 `json:"currentValue"`
-	SeriesCount    int      `json:"seriesCount"`
-	EvaluationMs   int64    `json:"evaluationMs"`
-	ErrorMessage   string   `json:"errorMessage,omitempty"`
-	HasData        bool     `json:"hasData"`
+	Valid           bool         `json:"valid"`
+	CurrentValue    *float64     `json:"currentValue"`
+	SeriesCount     int          `json:"seriesCount"`
+	EvaluationMs    int64        `json:"evaluationMs"`
+	ErrorMessage    string       `json:"errorMessage,omitempty"`
+	HasData         bool         `json:"hasData"`
 	GeneratedPromQL PromQLOutput `json:"generatedPromQL"`
 }
 
@@ -171,8 +171,8 @@ func ValidateAndTestQuery(client *PrometheusClient, input PromQLInput) QueryVali
 
 	if output.Query == "" {
 		return QueryValidationResult{
-			Valid:        false,
-			ErrorMessage: "PromQL query is empty",
+			Valid:           false,
+			ErrorMessage:    "PromQL query is empty",
 			GeneratedPromQL: output,
 		}
 	}

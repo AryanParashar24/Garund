@@ -3,6 +3,8 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -27,12 +29,12 @@ type ReliabilityMetric struct {
 }
 
 type ReliabilityResult struct {
-	Service   string          `json:"service"`
-	Namespace string          `json:"namespace"`
-	Window    string          `json:"window"`
-	SLIs      []EvaluatedSLI  `json:"slis"`
-	SLO       EvaluatedSLO    `json:"slo"`
-	SLA       EvaluatedSLA    `json:"sla"`
+	Service   string         `json:"service"`
+	Namespace string         `json:"namespace"`
+	Window    string         `json:"window"`
+	SLIs      []EvaluatedSLI `json:"slis"`
+	SLO       EvaluatedSLO   `json:"slo"`
+	SLA       EvaluatedSLA   `json:"sla"`
 }
 
 func getPrometheusClientForCluster(clusterID string) *PrometheusClient {
@@ -47,12 +49,48 @@ func getAlertmanagerClientForCluster(clusterID string) *AlertmanagerClient {
 	return NewAlertmanagerClient(amURL)
 }
 
+var PagerDutyEndpoint = "https://events.pagerduty.com/v2/enqueue"
+
+func resolveSLITarget(item SLIItem, store *ReliabilityStore, clusterID string) float64 {
+	if item.Target > 0 {
+		return item.Target
+	}
+	if store != nil {
+		slos := store.ListSLOs(clusterID)
+		for _, slo := range slos {
+			if slo.SLIID == item.ID && slo.Target > 0 {
+				return slo.Target
+			}
+		}
+	}
+	switch item.Type {
+	case "availability":
+		return 99.9
+	case "error_rate":
+		return 0.1
+	case "latency":
+		return 300.0
+	case "throughput":
+		return 100.0
+	case "saturation":
+		return 80.0
+	default:
+		return 99.0
+	}
+}
+
+func GenerateAlertFingerprint(clusterID, namespace, service, policyID, sloID, sliID string) string {
+	h := sha256.New()
+	h.Write([]byte(fmt.Sprintf("%s:%s:%s:%s:%s:%s", clusterID, namespace, service, policyID, sloID, sliID)))
+	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
 func deliverAlertToDestination(ctx context.Context, dest NotificationDestination, alert GarundAlert, amURL string) (bool, string, string) {
 	if !dest.Enabled {
 		return false, "failed", fmt.Sprintf("Destination '%s' is disabled", dest.Name)
 	}
 
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := NewSafeHTTPClient(5 * time.Second)
 
 	switch strings.ToLower(dest.Type) {
 	case "webhook":
@@ -60,8 +98,11 @@ func deliverAlertToDestination(ctx context.Context, dest NotificationDestination
 		if targetURL == "" {
 			targetURL = dest.Config["webhook_url"]
 		}
-		if targetURL == "" || (!strings.HasPrefix(targetURL, "http://") && !strings.HasPrefix(targetURL, "https://")) {
+		if targetURL == "" {
 			return false, "failed", "Invalid or missing webhook URL in destination configuration"
+		}
+		if err := ValidateSafeURL(targetURL); err != nil {
+			return false, "failed", SanitizeErrorMessage(fmt.Sprintf("Webhook URL blocked by SSRF protection: %v", err))
 		}
 
 		payload := map[string]interface{}{
@@ -86,7 +127,7 @@ func deliverAlertToDestination(ctx context.Context, dest NotificationDestination
 
 		req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewBuffer(bodyBytes))
 		if err != nil {
-			return false, "failed", fmt.Sprintf("Failed to create webhook request: %v", err)
+			return false, "failed", SanitizeErrorMessage(fmt.Sprintf("Failed to create webhook request: %v", err))
 		}
 		req.Header.Set("Content-Type", "application/json")
 		if dest.Config["auth_header"] != "" {
@@ -95,7 +136,7 @@ func deliverAlertToDestination(ctx context.Context, dest NotificationDestination
 
 		resp, err := client.Do(req)
 		if err != nil {
-			return false, "failed", fmt.Sprintf("Webhook HTTP request failed: %v", err)
+			return false, "failed", SanitizeErrorMessage(fmt.Sprintf("Webhook HTTP request failed: %v", err))
 		}
 		defer resp.Body.Close()
 
@@ -112,7 +153,11 @@ func deliverAlertToDestination(ctx context.Context, dest NotificationDestination
 		if targetURL == "" {
 			return false, "failed", "No Alertmanager URL configured"
 		}
-		targetURL = strings.TrimSuffix(targetURL, "/") + "/api/v2/alerts"
+
+		fullURL := NormalizeAlertmanagerAlertsURL(targetURL)
+		if err := ValidateSafeURL(fullURL); err != nil {
+			return false, "failed", SanitizeErrorMessage(fmt.Sprintf("Alertmanager URL blocked by SSRF protection: %v", err))
+		}
 
 		amAlert := map[string]interface{}{
 			"labels":       alert.Labels,
@@ -126,20 +171,20 @@ func deliverAlertToDestination(ctx context.Context, dest NotificationDestination
 			return false, "failed", fmt.Sprintf("Failed to marshal Alertmanager payload: %v", err)
 		}
 
-		req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewBuffer(bodyBytes))
+		req, err := http.NewRequestWithContext(ctx, "POST", fullURL, bytes.NewBuffer(bodyBytes))
 		if err != nil {
-			return false, "failed", fmt.Sprintf("Failed to create Alertmanager request: %v", err)
+			return false, "failed", SanitizeErrorMessage(fmt.Sprintf("Failed to create Alertmanager request: %v", err))
 		}
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := client.Do(req)
 		if err != nil {
-			return false, "failed", fmt.Sprintf("Alertmanager HTTP request failed: %v", err)
+			return false, "failed", SanitizeErrorMessage(fmt.Sprintf("Alertmanager HTTP request failed: %v", err))
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			return true, "delivered", fmt.Sprintf("Delivered alert to Alertmanager at %s", targetURL)
+			return true, "delivered", fmt.Sprintf("Delivered alert to Alertmanager at %s", fullURL)
 		}
 		return false, "failed", fmt.Sprintf("Alertmanager returned HTTP status %d", resp.StatusCode)
 
@@ -153,6 +198,11 @@ func deliverAlertToDestination(ctx context.Context, dest NotificationDestination
 		}
 		if routingKey == "" {
 			return false, "failed", "Missing routing_key in PagerDuty destination configuration"
+		}
+
+		pdEndpoint := PagerDutyEndpoint
+		if customEP := dest.Config["api_url"]; customEP != "" {
+			pdEndpoint = customEP
 		}
 
 		pdSeverity := "warning"
@@ -182,15 +232,15 @@ func deliverAlertToDestination(ctx context.Context, dest NotificationDestination
 			return false, "failed", fmt.Sprintf("Failed to marshal PagerDuty payload: %v", err)
 		}
 
-		req, err := http.NewRequestWithContext(ctx, "POST", "https://events.pagerduty.com/v2/enqueue", bytes.NewBuffer(bodyBytes))
+		req, err := http.NewRequestWithContext(ctx, "POST", pdEndpoint, bytes.NewBuffer(bodyBytes))
 		if err != nil {
-			return false, "failed", fmt.Sprintf("Failed to create PagerDuty request: %v", err)
+			return false, "failed", SanitizeErrorMessage(fmt.Sprintf("Failed to create PagerDuty request: %v", err))
 		}
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := client.Do(req)
 		if err != nil {
-			return false, "failed", fmt.Sprintf("PagerDuty API request failed: %v", err)
+			return false, "failed", SanitizeErrorMessage(fmt.Sprintf("PagerDuty API request failed: %v", err))
 		}
 		defer resp.Body.Close()
 
@@ -235,12 +285,17 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 
 			val, hasData, err := client.QueryOptional(queryToRun)
 
+			target := resolveSLITarget(item, store, clusterID)
 			var curVal *float64
 			status := "unavailable"
 
-			if err == nil && hasData {
-				curVal = &val
-				status = CalculateSLIStatus(curVal, 99.9, item.Type)
+			if err == nil {
+				if hasData {
+					curVal = &val
+					status = CalculateSLIStatus(curVal, target, item.Type)
+				} else {
+					status = "no_data"
+				}
 			}
 
 			evaluated = append(evaluated, EvaluatedSLI{
@@ -248,7 +303,7 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 				Name:             item.Name,
 				Type:             item.Type,
 				Value:            curVal,
-				Target:           99.9,
+				Target:           target,
 				Unit:             item.Unit,
 				EvaluationWindow: item.EvaluationWindow,
 				Status:           status,
@@ -1033,16 +1088,55 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 		clusterID := c.Param("id")
 		var dest NotificationDestination
 		if err := c.ShouldBindJSON(&dest); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"error": SanitizeErrorMessage(err.Error())})
 			return
 		}
 		dest.ClusterID = clusterID
+		if err := ValidateDestinationConfig(dest); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": SanitizeErrorMessage(err.Error())})
+			return
+		}
 		saved := store.SaveDestination(dest)
 		c.JSON(http.StatusCreated, saved)
 	})
 
-	router.DELETE("/api/clusters/:id/destinations/:destId", func(c *gin.Context) {
+	updateDestHandler := func(c *gin.Context) {
+		clusterID := c.Param("id")
 		destID := c.Param("destId")
+		existing, found := store.GetDestination(destID)
+		if !found || (existing.ClusterID != "" && existing.ClusterID != clusterID) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Destination not found"})
+			return
+		}
+		var dest NotificationDestination
+		if err := c.ShouldBindJSON(&dest); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": SanitizeErrorMessage(err.Error())})
+			return
+		}
+		dest.ID = destID
+		dest.ClusterID = clusterID
+		if dest.CreatedAt.IsZero() {
+			dest.CreatedAt = existing.CreatedAt
+		}
+		if err := ValidateDestinationConfig(dest); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": SanitizeErrorMessage(err.Error())})
+			return
+		}
+		saved := store.SaveDestination(dest)
+		c.JSON(http.StatusOK, saved)
+	}
+
+	router.PUT("/api/clusters/:id/destinations/:destId", updateDestHandler)
+	router.PATCH("/api/clusters/:id/destinations/:destId", updateDestHandler)
+
+	router.DELETE("/api/clusters/:id/destinations/:destId", func(c *gin.Context) {
+		clusterID := c.Param("id")
+		destID := c.Param("destId")
+		existing, found := store.GetDestination(destID)
+		if !found || (existing.ClusterID != "" && existing.ClusterID != clusterID) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Destination not found"})
+			return
+		}
 		if store.DeleteDestination(destID) {
 			c.JSON(http.StatusOK, gin.H{"message": "Notification destination removed"})
 		} else {
@@ -1077,19 +1171,24 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 			if item.Query != "" {
 				q = item.Query
 			}
+			target := resolveSLITarget(item, store, clusterID)
 			val, hasData, err := client.QueryOptional(q)
 			var curVal *float64
 			status := "unavailable"
-			if err == nil && hasData {
-				curVal = &val
-				status = CalculateSLIStatus(curVal, 99.9, item.Type)
+			if err == nil {
+				if hasData {
+					curVal = &val
+					status = CalculateSLIStatus(curVal, target, item.Type)
+				} else {
+					status = "no_data"
+				}
 			}
 			evalSLIs = append(evalSLIs, EvaluatedSLI{
 				ID:               item.ID,
 				Name:             item.Name,
 				Type:             item.Type,
 				Value:            curVal,
-				Target:           99.9,
+				Target:           target,
 				Unit:             item.Unit,
 				EvaluationWindow: item.EvaluationWindow,
 				Status:           status,
@@ -1108,7 +1207,7 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 			sliType := "availability"
 			var curVal *float64
 
-			if exists {
+			if exists && (sli.ClusterID == "" || sli.ClusterID == clusterID) {
 				sliName = sli.Name
 				sliType = sli.Type
 				output := GeneratePromQL(PromQLInput{
@@ -1126,9 +1225,15 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 				if err == nil && hasData {
 					curVal = &val
 				}
+			} else {
+				sliName = fmt.Sprintf("%s (missing SLI)", item.Name)
 			}
 
 			evalSLO := EvaluateSLO(item, curVal, sliName, sliType)
+			if !exists || (sli.ClusterID != "" && sli.ClusterID != clusterID) {
+				evalSLO.Status = "unavailable"
+			}
+
 			switch evalSLO.Status {
 			case "healthy":
 				healthyCount++
@@ -1142,6 +1247,19 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 
 		evalSLAs := make([]EvaluatedSLA, 0)
 		for _, item := range slas {
+			sloTarget := 99.9
+			for _, slo := range slos {
+				if slo.Service == item.Service && slo.Namespace == item.Namespace {
+					sloTarget = slo.Target
+					break
+				}
+			}
+			if item.AvailabilityTarget != nil {
+				if sloTarget < *item.AvailabilityTarget {
+					sloTarget = *item.AvailabilityTarget
+				}
+			}
+
 			output := GeneratePromQL(PromQLInput{
 				Type:      "availability",
 				Window:    "5m",
@@ -1153,7 +1271,7 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 			if err == nil && hasData {
 				curVal = &val
 			}
-			evalSLAs = append(evalSLAs, EvaluateSLA(item, curVal, nil, 99.95))
+			evalSLAs = append(evalSLAs, EvaluateSLA(item, curVal, nil, sloTarget))
 		}
 
 		activeAlerts := alertStore.ListAlerts(clusterID, "firing")

@@ -35,6 +35,7 @@ export interface SLIItem {
   service: string
   namespace: string
   type: SLIType
+  target?: number
   query?: string
   goodQuery?: string
   totalQuery?: string

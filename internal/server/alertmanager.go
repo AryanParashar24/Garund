@@ -25,17 +25,33 @@ type AlertmanagerClient struct {
 	Client  *http.Client
 }
 
-func NewAlertmanagerClient(baseURL string) *AlertmanagerClient {
-	if baseURL == "" {
-		baseURL = "http://localhost:9093"
+func NormalizeAlertmanagerURL(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return "http://localhost:9093"
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
+	rawURL = strings.TrimRight(rawURL, "/")
+
+	if strings.HasSuffix(rawURL, "/api/v2/alerts") {
+		rawURL = strings.TrimSuffix(rawURL, "/api/v2/alerts")
+	} else if strings.HasSuffix(rawURL, "/api/v2") {
+		rawURL = strings.TrimSuffix(rawURL, "/api/v2")
+	}
+
+	return strings.TrimRight(rawURL, "/")
+}
+
+func NormalizeAlertmanagerAlertsURL(rawURL string) string {
+	base := NormalizeAlertmanagerURL(rawURL)
+	return base + "/api/v2/alerts"
+}
+
+func NewAlertmanagerClient(baseURL string) *AlertmanagerClient {
+	normalized := NormalizeAlertmanagerURL(baseURL)
 
 	return &AlertmanagerClient{
-		BaseURL: baseURL,
-		Client: &http.Client{
-			Timeout: 10 * time.Second,
-		},
+		BaseURL: normalized,
+		Client:  NewSafeHTTPClient(10 * time.Second),
 	}
 }
 
@@ -75,13 +91,13 @@ type AlertmanagerAlert struct {
 }
 
 type AlertmanagerWebhookPayload struct {
-	Version           string               `json:"version"`
-	GroupKey          string               `json:"groupKey"`
-	Status            string               `json:"status"`
-	Receiver          string               `json:"receiver"`
-	GroupLabels       map[string]string    `json:"groupLabels"`
-	CommonLabels      map[string]string    `json:"commonLabels"`
-	CommonAnnotations map[string]string    `json:"commonAnnotations"`
+	Version           string              `json:"version"`
+	GroupKey          string              `json:"groupKey"`
+	Status            string              `json:"status"`
+	Receiver          string              `json:"receiver"`
+	GroupLabels       map[string]string   `json:"groupLabels"`
+	CommonLabels      map[string]string   `json:"commonLabels"`
+	CommonAnnotations map[string]string   `json:"commonAnnotations"`
 	Alerts            []AlertmanagerAlert `json:"alerts"`
 }
 

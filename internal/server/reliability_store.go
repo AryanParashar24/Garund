@@ -18,6 +18,7 @@ type SLIItem struct {
 	Service          string    `json:"service"`
 	Namespace        string    `json:"namespace"`
 	Type             string    `json:"type"` // availability, error_rate, latency, throughput, saturation, custom
+	Target           float64   `json:"target,omitempty"`
 	Query            string    `json:"query,omitempty"`
 	GoodQuery        string    `json:"goodQuery,omitempty"`
 	TotalQuery       string    `json:"totalQuery,omitempty"`
@@ -89,13 +90,13 @@ type NotificationDestination struct {
 }
 
 type ReliabilityStoreData struct {
-	SLIs            map[string]SLIItem                 `json:"slis"`
-	SLOs            map[string]SLOItem                 `json:"slos"`
-	SLAs            map[string]SLAItem                 `json:"slas"`
-	AlertPolicies   map[string]AlertPolicyItem         `json:"alertPolicies"`
-	Destinations    map[string]NotificationDestination `json:"destinations"`
-	PrometheusURLs  map[string]string                  `json:"prometheusUrls"`  // clusterID -> URL
-	AlertmanagerURLs map[string]string                 `json:"alertmanagerUrls"` // clusterID -> URL
+	SLIs             map[string]SLIItem                 `json:"slis"`
+	SLOs             map[string]SLOItem                 `json:"slos"`
+	SLAs             map[string]SLAItem                 `json:"slas"`
+	AlertPolicies    map[string]AlertPolicyItem         `json:"alertPolicies"`
+	Destinations     map[string]NotificationDestination `json:"destinations"`
+	PrometheusURLs   map[string]string                  `json:"prometheusUrls"`   // clusterID -> URL
+	AlertmanagerURLs map[string]string                  `json:"alertmanagerUrls"` // clusterID -> URL
 }
 
 type ReliabilityStore struct {
@@ -616,4 +617,50 @@ func (s *ReliabilityStore) SetAlertmanagerURL(clusterID, url string) {
 	defer s.mu.Unlock()
 	s.data.AlertmanagerURLs[clusterID] = url
 	_ = s.saveLocked()
+}
+
+func ValidateDestinationConfig(dest NotificationDestination) error {
+	if strings.TrimSpace(dest.Name) == "" {
+		return fmt.Errorf("destination name is required")
+	}
+
+	switch strings.ToLower(dest.Type) {
+	case "webhook":
+		rawURL := dest.Config["url"]
+		if rawURL == "" {
+			rawURL = dest.Config["webhook_url"]
+		}
+		if rawURL == "" {
+			return fmt.Errorf("webhook destination requires a 'url' or 'webhook_url' in configuration")
+		}
+		if err := ValidateSafeURL(rawURL); err != nil {
+			return fmt.Errorf("invalid webhook URL: %w", err)
+		}
+
+	case "pagerduty":
+		rk := dest.Config["routing_key"]
+		if rk == "" {
+			rk = dest.Config["integration_key"]
+		}
+		if rk == "" {
+			rk = dest.Config["service_key"]
+		}
+		if rk == "" {
+			return fmt.Errorf("pagerduty destination requires 'routing_key', 'integration_key', or 'service_key' in configuration")
+		}
+
+	case "alertmanager":
+		baseURL := dest.Config["url"]
+		if baseURL == "" {
+			baseURL = dest.Config["base_url"]
+		}
+		if baseURL == "" {
+			return fmt.Errorf("alertmanager destination requires a 'url' or 'base_url' in configuration")
+		}
+		if err := ValidateSafeURL(baseURL); err != nil {
+			return fmt.Errorf("invalid alertmanager base URL: %w", err)
+		}
+	}
+
+	return nil
 }

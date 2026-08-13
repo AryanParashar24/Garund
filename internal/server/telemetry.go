@@ -126,4 +126,3 @@ func GetGarundMetrics() *GarundMetrics {
 	})
 	return globalMetrics
 }
-

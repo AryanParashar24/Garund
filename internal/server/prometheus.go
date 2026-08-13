@@ -32,11 +32,11 @@ type PrometheusConfig struct {
 }
 
 type PrometheusClient struct {
-	BaseURL string
-	Client  *http.Client
-	mu      sync.RWMutex
-	status  PrometheusStatusType
-	lastErr error
+	BaseURL     string
+	Client      *http.Client
+	mu          sync.RWMutex
+	status      PrometheusStatusType
+	lastErr     error
 	lastSuccess *time.Time
 }
 
@@ -48,7 +48,7 @@ type PrometheusResponse struct {
 }
 
 type PrometheusResponseData struct {
-	ResultType string             `json:"resultType"`
+	ResultType string                  `json:"resultType"`
 	Result     []PrometheusQueryResult `json:"result"`
 }
 
@@ -529,4 +529,3 @@ func (p *PrometheusClient) Targets(ctx context.Context) (interface{}, error) {
 
 	return apiResp.Data, nil
 }
-

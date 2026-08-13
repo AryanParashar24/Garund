@@ -61,8 +61,6 @@ type searchResourceType struct {
 	score int
 }
 
-
-
 type ReliabilitySLO struct {
 	Name                 string   `json:"name"`
 	Service              string   `json:"service"`
