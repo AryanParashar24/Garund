@@ -30,7 +30,7 @@ No manual Node.js, npm, or Go development commands are required for running the 
 Install the latest pre-compiled binary for your system (`linux`, `darwin`, `windows`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AryanParashar24/Garund/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/AryanParashar24/Garund/master/scripts/install.sh | sh
 ```
 
 ### Build from Source
