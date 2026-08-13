@@ -33,15 +33,18 @@ Install the latest pre-compiled binary for your system (`linux`, `darwin`, `wind
 curl -fsSL https://raw.githubusercontent.com/AryanParashar24/Garund/master/scripts/install.sh | sh
 ```
 
-### Build from Source
+### Build & Install from Source
 
 ```bash
 git clone https://github.com/AryanParashar24/Garund.git
 cd Garund
-make build
-```
 
-This generates the single self-contained executable at `bin/garund`.
+# Build binary locally into bin/garund
+make build
+
+# Install binary to system PATH (~/.local/bin/garund)
+make install
+```
 
 ---
 

@@ -6,7 +6,7 @@ LDFLAGS := -X github.com/garund/garund/internal/buildinfo.Version=$(VERSION) \
            -X github.com/garund/garund/internal/buildinfo.Commit=$(COMMIT) \
            -X github.com/garund/garund/internal/buildinfo.BuildDate=$(BUILD_DATE)
 
-.PHONY: all build build-frontend build-server build-agent test lint dev clean release
+.PHONY: all build build-frontend build-server build-agent install test lint dev clean release
 
 all: build
 
@@ -32,6 +32,15 @@ build-agent:
 	go build -ldflags "$(LDFLAGS)" -o bin/garund-agent ./cmd/garund-agent/main.go
 
 build: build-frontend build-server build-agent
+	@echo "\n✓ Garund built successfully at bin/garund"
+	@echo "  Run './bin/garund start' or run 'make install' to copy to ~/.local/bin/garund\n"
+
+install: build
+	@echo "Installing garund binary to ~/.local/bin..."
+	@mkdir -p $(HOME)/.local/bin
+	@cp bin/garund $(HOME)/.local/bin/garund
+	@echo "\n✓ Garund installed successfully to $(HOME)/.local/bin/garund"
+	@echo "  Run 'garund start' to launch!\n"
 
 test:
 	@echo "Running backend unit tests..."
