@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -474,6 +475,229 @@ func TestAlertPoliciesCanonicalRoute(t *testing.T) {
 		t.Fatalf("expected [] after deletion, got %d: %s", w.Code, w.Body.String())
 	}
 }
+
+func TestSLI_SLO_SLA_CRUD_Completeness(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	RegisterReliabilityRoutes(router)
+
+	clusterA := "test-cluster-crud-a"
+	clusterB := "test-cluster-crud-b"
+
+	// 1. SLI CRUD
+	sliJSON := `{
+		"name": "Test SLI",
+		"type": "availability",
+		"service": "cart",
+		"namespace": "prod",
+		"evaluationWindow": "5m"
+	}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/clusters/"+clusterA+"/slis", bytes.NewBufferString(sliJSON))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created for SLI POST, got %d: %s", w.Code, w.Body.String())
+	}
+	var createdSLI SLIItem
+	_ = json.Unmarshal(w.Body.Bytes(), &createdSLI)
+
+	// GET SLI by ID
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/api/clusters/"+clusterA+"/slis/"+createdSLI.ID, nil)
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for SLI GET, got %d", w.Code)
+	}
+
+	// Cluster isolation: GET SLI on clusterB -> 404
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/api/clusters/"+clusterB+"/slis/"+createdSLI.ID, nil)
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for cross-cluster SLI GET, got %d", w.Code)
+	}
+
+	// PUT SLI update
+	updateSLIJSON := `{
+		"name": "Test SLI Updated",
+		"type": "availability",
+		"service": "cart",
+		"namespace": "prod",
+		"evaluationWindow": "15m"
+	}`
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("PUT", "/api/clusters/"+clusterA+"/slis/"+createdSLI.ID, bytes.NewBufferString(updateSLIJSON))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for SLI PUT, got %d", w.Code)
+	}
+
+	// 2. SLO CRUD
+	sloJSON := fmt.Sprintf(`{
+		"name": "Test SLO",
+		"service": "cart",
+		"namespace": "prod",
+		"sliId": "%s",
+		"target": 99.9,
+		"window": "30d"
+	}`, createdSLI.ID)
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("POST", "/api/clusters/"+clusterA+"/slos", bytes.NewBufferString(sloJSON))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created for SLO POST, got %d: %s", w.Code, w.Body.String())
+	}
+	var createdSLO SLOItem
+	_ = json.Unmarshal(w.Body.Bytes(), &createdSLO)
+
+	// PUT SLO update
+	updateSLOJSON := fmt.Sprintf(`{
+		"name": "Test SLO Updated",
+		"service": "cart",
+		"namespace": "prod",
+		"sliId": "%s",
+		"target": 99.5,
+		"window": "30d"
+	}`, createdSLI.ID)
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("PUT", "/api/clusters/"+clusterA+"/slos/"+createdSLO.ID, bytes.NewBufferString(updateSLOJSON))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for SLO PUT, got %d", w.Code)
+	}
+
+	// 3. SLA CRUD
+	target := 99.5
+	slaItem := SLAItem{
+		Name:               "Test SLA",
+		Service:            "cart",
+		Namespace:          "prod",
+		AvailabilityTarget: &target,
+		Window:             "30d",
+	}
+	slaBytes, _ := json.Marshal(slaItem)
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("POST", "/api/clusters/"+clusterA+"/slas", bytes.NewBuffer(slaBytes))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created for SLA POST, got %d: %s", w.Code, w.Body.String())
+	}
+	var createdSLA SLAItem
+	_ = json.Unmarshal(w.Body.Bytes(), &createdSLA)
+
+	// PUT SLA update
+	newTarget := 99.0
+	createdSLA.AvailabilityTarget = &newTarget
+	createdSLA.Name = "Test SLA Updated"
+	slaBytes, _ = json.Marshal(createdSLA)
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("PUT", "/api/clusters/"+clusterA+"/slas/"+createdSLA.ID, bytes.NewBuffer(slaBytes))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for SLA PUT, got %d", w.Code)
+	}
+}
+
+func TestTestAlertDeliveryTruthfulness(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	RegisterReliabilityRoutes(router)
+
+	clusterID := "test-cluster-delivery"
+
+	// Create policy
+	polJSON := `{
+		"name": "Delivery Test Policy",
+		"conditionType": "burn_rate",
+		"threshold": 2.0,
+		"severity": "P1",
+		"enabled": true
+	}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/clusters/"+clusterID+"/alert-policies", bytes.NewBufferString(polJSON))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	var pol AlertPolicyItem
+	_ = json.Unmarshal(w.Body.Bytes(), &pol)
+
+	// Case 1: No destination configured -> delivered: false, status: not_configured
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("POST", "/api/clusters/"+clusterID+"/alert-policies/"+pol.ID+"/test", nil)
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for test alert, got %d", w.Code)
+	}
+	var res1 struct {
+		Delivered bool   `json:"delivered"`
+		Status    string `json:"status"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &res1)
+	if res1.Delivered || res1.Status != "not_configured" {
+		t.Fatalf("expected delivered: false, status: not_configured, got delivered: %v, status: %s", res1.Delivered, res1.Status)
+	}
+
+	// Case 2: Create destination of unsupported type -> status: unsupported
+	destJSON := `{
+		"name": "Unsupported Dest",
+		"type": "custom_email",
+		"enabled": true
+	}`
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("POST", "/api/clusters/"+clusterID+"/destinations", bytes.NewBufferString(destJSON))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("POST", "/api/clusters/"+clusterID+"/alert-policies/"+pol.ID+"/test", nil)
+	router.ServeHTTP(w, req)
+	var res2 struct {
+		Delivered bool   `json:"delivered"`
+		Status    string `json:"status"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &res2)
+	if res2.Delivered || res2.Status != "unsupported" {
+		t.Fatalf("expected delivered: false, status: unsupported, got delivered: %v, status: %s", res2.Delivered, res2.Status)
+	}
+}
+
+func TestSLIStatusEvaluationSemantics(t *testing.T) {
+	// Availability (higher is better)
+	valAvailHigh := 99.95
+	valAvailLow := 98.0
+	if status := CalculateSLIStatus(&valAvailHigh, 99.9, "availability"); status != "healthy" {
+		t.Errorf("expected healthy for availability 99.95 vs target 99.9, got %s", status)
+	}
+	if status := CalculateSLIStatus(&valAvailLow, 99.9, "availability"); status != "critical" {
+		t.Errorf("expected critical for availability 98.0 vs target 99.9, got %s", status)
+	}
+
+	// Error Rate (lower is better)
+	valErrLow := 0.05
+	valErrHigh := 2.5
+	if status := CalculateSLIStatus(&valErrLow, 0.1, "error_rate"); status != "healthy" {
+		t.Errorf("expected healthy for error rate 0.05 vs target 0.1, got %s", status)
+	}
+	if status := CalculateSLIStatus(&valErrHigh, 0.1, "error_rate"); status != "critical" {
+		t.Errorf("expected critical for error rate 2.5 vs target 0.1, got %s", status)
+	}
+
+	// Latency (lower is better)
+	valLatLow := 150.0
+	valLatHigh := 500.0
+	if status := CalculateSLIStatus(&valLatLow, 300.0, "latency"); status != "healthy" {
+		t.Errorf("expected healthy for latency 150ms vs target 300ms, got %s", status)
+	}
+	if status := CalculateSLIStatus(&valLatHigh, 300.0, "latency"); status != "critical" {
+		t.Errorf("expected critical for latency 500ms vs target 300ms, got %s", status)
+	}
+}
+
 
 
 

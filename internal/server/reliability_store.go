@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -349,6 +350,14 @@ func (s *ReliabilityStore) SaveSLI(item SLIItem) SLIItem {
 	return item
 }
 
+func (s *ReliabilityStore) GetSLI(id string) (SLIItem, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	item, ok := s.data.SLIs[id]
+	return item, ok
+}
+
 func (s *ReliabilityStore) DeleteSLI(id string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -373,6 +382,14 @@ func (s *ReliabilityStore) ListSLOs(clusterID string) []SLOItem {
 		}
 	}
 	return result
+}
+
+func (s *ReliabilityStore) GetSLO(id string) (SLOItem, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	item, ok := s.data.SLOs[id]
+	return item, ok
 }
 
 func (s *ReliabilityStore) SaveSLO(item SLOItem) SLOItem {
@@ -413,6 +430,14 @@ func (s *ReliabilityStore) ListSLAs(clusterID string) []SLAItem {
 		}
 	}
 	return result
+}
+
+func (s *ReliabilityStore) GetSLA(id string) (SLAItem, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	item, ok := s.data.SLAs[id]
+	return item, ok
 }
 
 func (s *ReliabilityStore) SaveSLA(item SLAItem) SLAItem {
@@ -497,10 +522,18 @@ func (s *ReliabilityStore) ListDestinations(clusterID string) []NotificationDest
 	result := make([]NotificationDestination, 0)
 	for _, item := range s.data.Destinations {
 		if clusterID == "" || item.ClusterID == clusterID {
-			result = append(result, item)
+			result = append(result, SanitizeDestination(item))
 		}
 	}
 	return result
+}
+
+func (s *ReliabilityStore) GetDestination(id string) (NotificationDestination, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	item, ok := s.data.Destinations[id]
+	return item, ok
 }
 
 func (s *ReliabilityStore) SaveDestination(item NotificationDestination) NotificationDestination {
@@ -527,6 +560,29 @@ func (s *ReliabilityStore) DeleteDestination(id string) bool {
 		return true
 	}
 	return false
+}
+
+func SanitizeDestination(dest NotificationDestination) NotificationDestination {
+	sanitized := dest
+	if dest.Config != nil {
+		sanitized.Config = make(map[string]string)
+		for k, v := range dest.Config {
+			lk := fmt.Sprintf("%s", k)
+			lkLower := strings.ToLower(lk)
+			if strings.Contains(lkLower, "secret") || strings.Contains(lkLower, "token") || strings.Contains(lkLower, "key") || strings.Contains(lkLower, "password") || strings.Contains(lkLower, "credential") || strings.Contains(lkLower, "auth") {
+				if len(v) > 8 {
+					sanitized.Config[k] = v[:4] + "****" + v[len(v)-4:]
+				} else if len(v) > 0 {
+					sanitized.Config[k] = "****"
+				} else {
+					sanitized.Config[k] = ""
+				}
+			} else {
+				sanitized.Config[k] = v
+			}
+		}
+	}
+	return sanitized
 }
 
 // Config per cluster

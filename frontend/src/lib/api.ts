@@ -536,6 +536,17 @@ export async function testSLIQuery(clusterId: string, input: PromQLInput): Promi
   return res.json()
 }
 
+export async function updateSLI(clusterId: string, sliId: string, sli: Partial<SLIItem>): Promise<SLIItem> {
+  const cid = clusterId || "local-dev"
+  const res = await fetch(apiUrl(`/api/clusters/${cid}/slis/${sliId}`), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(sli),
+  })
+  if (!res.ok) throw new Error(`Failed to update SLI: ${res.status}`)
+  return res.json()
+}
+
 export async function deleteSLI(clusterId: string, sliId: string): Promise<void> {
   const cid = clusterId || "local-dev"
   const res = await fetch(apiUrl(`/api/clusters/${cid}/slis/${sliId}`), { method: "DELETE" })
@@ -560,6 +571,17 @@ export async function createSLO(clusterId: string, slo: SLOItem): Promise<SLOIte
   return res.json()
 }
 
+export async function updateSLO(clusterId: string, sloId: string, slo: Partial<SLOItem>): Promise<SLOItem> {
+  const cid = clusterId || "local-dev"
+  const res = await fetch(apiUrl(`/api/clusters/${cid}/slos/${sloId}`), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(slo),
+  })
+  if (!res.ok) throw new Error(`Failed to update SLO: ${res.status}`)
+  return res.json()
+}
+
 export async function deleteSLO(clusterId: string, sloId: string): Promise<void> {
   const cid = clusterId || "local-dev"
   const res = await fetch(apiUrl(`/api/clusters/${cid}/slos/${sloId}`), { method: "DELETE" })
@@ -581,6 +603,17 @@ export async function createSLA(clusterId: string, sla: SLAItem): Promise<SLAIte
     body: JSON.stringify(sla),
   })
   if (!res.ok) throw new Error(`Failed to save SLA: ${res.status}`)
+  return res.json()
+}
+
+export async function updateSLA(clusterId: string, slaId: string, sla: Partial<SLAItem>): Promise<SLAItem> {
+  const cid = clusterId || "local-dev"
+  const res = await fetch(apiUrl(`/api/clusters/${cid}/slas/${slaId}`), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(sla),
+  })
+  if (!res.ok) throw new Error(`Failed to update SLA: ${res.status}`)
   return res.json()
 }
 

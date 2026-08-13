@@ -1,12 +1,16 @@
 package server
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	k8s "github.com/garund/garund/internal/kubernetes"
+	"github.com/gin-gonic/gin"
 )
 
 // Legacy structures maintained for API compatibility
@@ -41,6 +45,163 @@ func getAlertmanagerClientForCluster(clusterID string) *AlertmanagerClient {
 	store := GetReliabilityStore()
 	amURL := store.GetAlertmanagerURL(clusterID)
 	return NewAlertmanagerClient(amURL)
+}
+
+func deliverAlertToDestination(ctx context.Context, dest NotificationDestination, alert GarundAlert, amURL string) (bool, string, string) {
+	if !dest.Enabled {
+		return false, "failed", fmt.Sprintf("Destination '%s' is disabled", dest.Name)
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	switch strings.ToLower(dest.Type) {
+	case "webhook":
+		targetURL := dest.Config["url"]
+		if targetURL == "" {
+			targetURL = dest.Config["webhook_url"]
+		}
+		if targetURL == "" || (!strings.HasPrefix(targetURL, "http://") && !strings.HasPrefix(targetURL, "https://")) {
+			return false, "failed", "Invalid or missing webhook URL in destination configuration"
+		}
+
+		payload := map[string]interface{}{
+			"version":  "4",
+			"status":   "firing",
+			"receiver": dest.Name,
+			"alerts": []map[string]interface{}{
+				{
+					"status":      alert.Status,
+					"labels":      alert.Labels,
+					"annotations": alert.Annotations,
+					"startsAt":    alert.StartsAt,
+					"fingerprint": alert.Fingerprint,
+				},
+			},
+		}
+
+		bodyBytes, err := json.Marshal(payload)
+		if err != nil {
+			return false, "failed", fmt.Sprintf("Failed to marshal webhook payload: %v", err)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewBuffer(bodyBytes))
+		if err != nil {
+			return false, "failed", fmt.Sprintf("Failed to create webhook request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if dest.Config["auth_header"] != "" {
+			req.Header.Set("Authorization", dest.Config["auth_header"])
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return false, "failed", fmt.Sprintf("Webhook HTTP request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return true, "delivered", fmt.Sprintf("Delivered alert to Webhook '%s'", dest.Name)
+		}
+		return false, "failed", fmt.Sprintf("Webhook returned HTTP status %d", resp.StatusCode)
+
+	case "alertmanager":
+		targetURL := dest.Config["url"]
+		if targetURL == "" {
+			targetURL = amURL
+		}
+		if targetURL == "" {
+			return false, "failed", "No Alertmanager URL configured"
+		}
+		targetURL = strings.TrimSuffix(targetURL, "/") + "/api/v2/alerts"
+
+		amAlert := map[string]interface{}{
+			"labels":       alert.Labels,
+			"annotations":  alert.Annotations,
+			"startsAt":     alert.StartsAt.Format(time.RFC3339),
+			"generatorURL": "http://garund.local/reliability",
+		}
+
+		bodyBytes, err := json.Marshal([]interface{}{amAlert})
+		if err != nil {
+			return false, "failed", fmt.Sprintf("Failed to marshal Alertmanager payload: %v", err)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewBuffer(bodyBytes))
+		if err != nil {
+			return false, "failed", fmt.Sprintf("Failed to create Alertmanager request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return false, "failed", fmt.Sprintf("Alertmanager HTTP request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return true, "delivered", fmt.Sprintf("Delivered alert to Alertmanager at %s", targetURL)
+		}
+		return false, "failed", fmt.Sprintf("Alertmanager returned HTTP status %d", resp.StatusCode)
+
+	case "pagerduty":
+		routingKey := dest.Config["routing_key"]
+		if routingKey == "" {
+			routingKey = dest.Config["integration_key"]
+		}
+		if routingKey == "" {
+			routingKey = dest.Config["service_key"]
+		}
+		if routingKey == "" {
+			return false, "failed", "Missing routing_key in PagerDuty destination configuration"
+		}
+
+		pdSeverity := "warning"
+		if alert.Severity == "P1" || alert.Severity == "critical" {
+			pdSeverity = "critical"
+		} else if alert.Severity == "P3" || alert.Severity == "P4" || alert.Severity == "info" {
+			pdSeverity = "info"
+		}
+
+		pdPayload := map[string]interface{}{
+			"routing_key":  routingKey,
+			"event_action": "trigger",
+			"dedup_key":    alert.Fingerprint,
+			"payload": map[string]interface{}{
+				"summary":        alert.Summary,
+				"severity":       pdSeverity,
+				"source":         "garund-sre-control-plane",
+				"component":      alert.Service,
+				"group":          alert.Namespace,
+				"class":          alert.Name,
+				"custom_details": alert.Labels,
+			},
+		}
+
+		bodyBytes, err := json.Marshal(pdPayload)
+		if err != nil {
+			return false, "failed", fmt.Sprintf("Failed to marshal PagerDuty payload: %v", err)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "POST", "https://events.pagerduty.com/v2/enqueue", bytes.NewBuffer(bodyBytes))
+		if err != nil {
+			return false, "failed", fmt.Sprintf("Failed to create PagerDuty request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return false, "failed", fmt.Sprintf("PagerDuty API request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == 200 || resp.StatusCode == 202 {
+			return true, "delivered", fmt.Sprintf("Delivered alert to PagerDuty service '%s'", dest.Name)
+		}
+		return false, "failed", fmt.Sprintf("PagerDuty API returned HTTP status %d", resp.StatusCode)
+
+	default:
+		return false, "unsupported", fmt.Sprintf("Destination type '%s' is not supported for automated delivery", dest.Type)
+	}
 }
 
 func RegisterReliabilityRoutes(router *gin.Engine) {
@@ -104,6 +265,17 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 		})
 	})
 
+	router.GET("/api/clusters/:id/slis/:sliId", func(c *gin.Context) {
+		clusterID := c.Param("id")
+		sliID := c.Param("sliId")
+		item, found := store.GetSLI(sliID)
+		if !found || (item.ClusterID != "" && item.ClusterID != clusterID) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "SLI not found"})
+			return
+		}
+		c.JSON(http.StatusOK, item)
+	})
+
 	router.POST("/api/clusters/:id/slis", func(c *gin.Context) {
 		clusterID := c.Param("id")
 		var item SLIItem
@@ -115,6 +287,31 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 		saved := store.SaveSLI(item)
 		c.JSON(http.StatusCreated, saved)
 	})
+
+	updateSLIHandler := func(c *gin.Context) {
+		clusterID := c.Param("id")
+		sliID := c.Param("sliId")
+		existing, found := store.GetSLI(sliID)
+		if !found || (existing.ClusterID != "" && existing.ClusterID != clusterID) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "SLI not found"})
+			return
+		}
+		var item SLIItem
+		if err := c.ShouldBindJSON(&item); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		item.ID = sliID
+		item.ClusterID = clusterID
+		if item.CreatedAt.IsZero() {
+			item.CreatedAt = existing.CreatedAt
+		}
+		saved := store.SaveSLI(item)
+		c.JSON(http.StatusOK, saved)
+	}
+
+	router.PUT("/api/clusters/:id/slis/:sliId", updateSLIHandler)
+	router.PATCH("/api/clusters/:id/slis/:sliId", updateSLIHandler)
 
 	router.POST("/api/clusters/:id/slis/test", func(c *gin.Context) {
 		clusterID := c.Param("id")
@@ -129,7 +326,13 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 	})
 
 	router.DELETE("/api/clusters/:id/slis/:sliId", func(c *gin.Context) {
+		clusterID := c.Param("id")
 		sliID := c.Param("sliId")
+		item, found := store.GetSLI(sliID)
+		if !found || (item.ClusterID != "" && item.ClusterID != clusterID) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "SLI not found"})
+			return
+		}
 		if store.DeleteSLI(sliID) {
 			c.JSON(http.StatusOK, gin.H{"message": "SLI removed"})
 		} else {
@@ -187,6 +390,17 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 		})
 	})
 
+	router.GET("/api/clusters/:id/slos/:sloId", func(c *gin.Context) {
+		clusterID := c.Param("id")
+		sloID := c.Param("sloId")
+		item, found := store.GetSLO(sloID)
+		if !found || (item.ClusterID != "" && item.ClusterID != clusterID) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "SLO not found"})
+			return
+		}
+		c.JSON(http.StatusOK, item)
+	})
+
 	router.POST("/api/clusters/:id/slos", func(c *gin.Context) {
 		clusterID := c.Param("id")
 		var item SLOItem
@@ -194,13 +408,66 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		if item.Target <= 0 || item.Target > 100 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "SLO target must be greater than 0 and less than or equal to 100"})
+			return
+		}
+		if item.SLIID != "" {
+			sli, sliFound := store.GetSLI(item.SLIID)
+			if !sliFound || (sli.ClusterID != "" && sli.ClusterID != clusterID) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Referenced SLI not found in this cluster"})
+				return
+			}
+		}
 		item.ClusterID = clusterID
 		saved := store.SaveSLO(item)
 		c.JSON(http.StatusCreated, saved)
 	})
 
-	router.DELETE("/api/clusters/:id/slos/:sloId", func(c *gin.Context) {
+	updateSLOHandler := func(c *gin.Context) {
+		clusterID := c.Param("id")
 		sloID := c.Param("sloId")
+		existing, found := store.GetSLO(sloID)
+		if !found || (existing.ClusterID != "" && existing.ClusterID != clusterID) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "SLO not found"})
+			return
+		}
+		var item SLOItem
+		if err := c.ShouldBindJSON(&item); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if item.Target <= 0 || item.Target > 100 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "SLO target must be greater than 0 and less than or equal to 100"})
+			return
+		}
+		if item.SLIID != "" {
+			sli, sliFound := store.GetSLI(item.SLIID)
+			if !sliFound || (sli.ClusterID != "" && sli.ClusterID != clusterID) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Referenced SLI not found in this cluster"})
+				return
+			}
+		}
+		item.ID = sloID
+		item.ClusterID = clusterID
+		if item.CreatedAt.IsZero() {
+			item.CreatedAt = existing.CreatedAt
+		}
+		saved := store.SaveSLO(item)
+		c.JSON(http.StatusOK, saved)
+	}
+
+	router.PUT("/api/clusters/:id/slos/:sloId", updateSLOHandler)
+	router.PATCH("/api/clusters/:id/slos/:sloId", updateSLOHandler)
+
+	router.DELETE("/api/clusters/:id/slos/:sloId", func(c *gin.Context) {
+		clusterID := c.Param("id")
+		sloID := c.Param("sloId")
+		item, found := store.GetSLO(sloID)
+		if !found || (item.ClusterID != "" && item.ClusterID != clusterID) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "SLO not found"})
+			return
+		}
 		if store.DeleteSLO(sloID) {
 			c.JSON(http.StatusOK, gin.H{"message": "SLO removed"})
 		} else {
@@ -212,7 +479,13 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 	router.GET("/api/clusters/:id/slas", func(c *gin.Context) {
 		clusterID := c.Param("id")
 		slas := store.ListSLAs(clusterID)
+		slos := store.ListSLOs(clusterID)
 		client := getPrometheusClientForCluster(clusterID)
+
+		sloMap := make(map[string]float64)
+		for _, slo := range slos {
+			sloMap[slo.Service+"-"+slo.Namespace] = slo.Target
+		}
 
 		var evaluated []EvaluatedSLA
 		for _, item := range slas {
@@ -229,7 +502,12 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 				curVal = &val
 			}
 
-			evalSLA := EvaluateSLA(item, curVal, nil, 99.95)
+			sloTarget := 99.9
+			if t, ok := sloMap[item.Service+"-"+item.Namespace]; ok {
+				sloTarget = t
+			}
+
+			evalSLA := EvaluateSLA(item, curVal, nil, sloTarget)
 			evaluated = append(evaluated, evalSLA)
 		}
 
@@ -239,6 +517,17 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 		})
 	})
 
+	router.GET("/api/clusters/:id/slas/:slaId", func(c *gin.Context) {
+		clusterID := c.Param("id")
+		slaID := c.Param("slaId")
+		item, found := store.GetSLA(slaID)
+		if !found || (item.ClusterID != "" && item.ClusterID != clusterID) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "SLA not found"})
+			return
+		}
+		c.JSON(http.StatusOK, item)
+	})
+
 	router.POST("/api/clusters/:id/slas", func(c *gin.Context) {
 		clusterID := c.Param("id")
 		var item SLAItem
@@ -246,13 +535,52 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		if item.AvailabilityTarget != nil && (*item.AvailabilityTarget <= 0 || *item.AvailabilityTarget > 100) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Availability target must be between 0 and 100"})
+			return
+		}
 		item.ClusterID = clusterID
 		saved := store.SaveSLA(item)
 		c.JSON(http.StatusCreated, saved)
 	})
 
-	router.DELETE("/api/clusters/:id/slas/:slaId", func(c *gin.Context) {
+	updateSLAHandler := func(c *gin.Context) {
+		clusterID := c.Param("id")
 		slaID := c.Param("slaId")
+		existing, found := store.GetSLA(slaID)
+		if !found || (existing.ClusterID != "" && existing.ClusterID != clusterID) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "SLA not found"})
+			return
+		}
+		var item SLAItem
+		if err := c.ShouldBindJSON(&item); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if item.AvailabilityTarget != nil && (*item.AvailabilityTarget <= 0 || *item.AvailabilityTarget > 100) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Availability target must be between 0 and 100"})
+			return
+		}
+		item.ID = slaID
+		item.ClusterID = clusterID
+		if item.CreatedAt.IsZero() {
+			item.CreatedAt = existing.CreatedAt
+		}
+		saved := store.SaveSLA(item)
+		c.JSON(http.StatusOK, saved)
+	}
+
+	router.PUT("/api/clusters/:id/slas/:slaId", updateSLAHandler)
+	router.PATCH("/api/clusters/:id/slas/:slaId", updateSLAHandler)
+
+	router.DELETE("/api/clusters/:id/slas/:slaId", func(c *gin.Context) {
+		clusterID := c.Param("id")
+		slaID := c.Param("slaId")
+		item, found := store.GetSLA(slaID)
+		if !found || (item.ClusterID != "" && item.ClusterID != clusterID) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "SLA not found"})
+			return
+		}
 		if store.DeleteSLA(slaID) {
 			c.JSON(http.StatusOK, gin.H{"message": "SLA removed"})
 		} else {
@@ -318,16 +646,82 @@ func RegisterReliabilityRoutes(router *gin.Engine) {
 	testPolicyHandler := func(c *gin.Context) {
 		policyID := c.Param("policyId")
 		clusterID := c.Param("id")
-		existing, found := store.GetAlertPolicy(policyID)
-		if !found || (existing.ClusterID != "" && existing.ClusterID != clusterID) {
+		policy, found := store.GetAlertPolicy(policyID)
+		if !found || (policy.ClusterID != "" && policy.ClusterID != clusterID) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Alert policy not found"})
 			return
 		}
 
+		var dest NotificationDestination
+		destFound := false
+
+		if policy.DestinationID != "" {
+			dest, destFound = store.GetDestination(policy.DestinationID)
+			if destFound && dest.ClusterID != "" && dest.ClusterID != clusterID {
+				destFound = false
+			}
+		}
+
+		if !destFound {
+			dests := store.ListDestinations(clusterID)
+			for _, d := range dests {
+				if d.Enabled {
+					dest = d
+					destFound = true
+					break
+				}
+			}
+		}
+
+		if !destFound {
+			c.JSON(http.StatusOK, gin.H{
+				"delivered": false,
+				"status":    "not_configured",
+				"message":   "No notification destination configured for this policy or cluster",
+			})
+			return
+		}
+
+		now := time.Now()
+		testAlert := GarundAlert{
+			Fingerprint: fmt.Sprintf("test-%s-%d", policyID, now.Unix()),
+			Name:        policy.Name,
+			Severity:    policy.Severity,
+			ClusterID:   clusterID,
+			Service:     policy.Service,
+			Namespace:   policy.Namespace,
+			SLOID:       policy.SLOID,
+			SLIID:       policy.SLIID,
+			Status:      "firing",
+			Summary:     fmt.Sprintf("[TEST ALERT] %s", policy.Name),
+			Description: fmt.Sprintf("Simulated alert for policy '%s' on cluster '%s'", policy.Name, clusterID),
+			StartsAt:    now,
+			UpdatedAt:   now,
+			Labels: map[string]string{
+				"alertname": policy.Name,
+				"severity":  policy.Severity,
+				"cluster":   clusterID,
+				"service":   policy.Service,
+				"namespace": policy.Namespace,
+				"slo":       policy.SLOID,
+				"sli":       policy.SLIID,
+				"policy":    policyID,
+			},
+			Annotations: map[string]string{
+				"summary":     fmt.Sprintf("[TEST ALERT] %s", policy.Name),
+				"description": "Garund test alert delivery",
+				"runbook_url": "https://garund.io/docs/runbooks/test",
+			},
+		}
+
+		amURL := store.GetAlertmanagerURL(clusterID)
+		delivered, status, msg := deliverAlertToDestination(c.Request.Context(), dest, testAlert, amURL)
+
 		c.JSON(http.StatusOK, gin.H{
-			"message":   fmt.Sprintf("Test alert triggered for policy %s on cluster %s", policyID, clusterID),
-			"delivered": true,
-			"timestamp": time.Now(),
+			"delivered":   delivered,
+			"status":      status,
+			"message":     msg,
+			"destination": SanitizeDestination(dest),
 		})
 	}
 
