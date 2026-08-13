@@ -12,6 +12,10 @@ all: build
 
 build-frontend:
 	@echo "Building Next.js static frontend..."
+	@if [ ! -d "frontend/node_modules" ]; then \
+		echo "Installing frontend dependencies..."; \
+		(cd frontend && npm install); \
+	fi
 	cd frontend && NEXT_PUBLIC_API_BASE_URL="" npm run build
 	@mkdir -p internal/web/dist
 	rm -rf internal/web/dist/*
