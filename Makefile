@@ -6,9 +6,19 @@ LDFLAGS := -X github.com/garund/garund/internal/buildinfo.Version=$(VERSION) \
            -X github.com/garund/garund/internal/buildinfo.Commit=$(COMMIT) \
            -X github.com/garund/garund/internal/buildinfo.BuildDate=$(BUILD_DATE)
 
-.PHONY: all build build-frontend build-server build-agent install test lint dev clean release
+PREFIX ?= $(HOME)/.local
+BINDIR ?= $(PREFIX)/bin
+
+.PHONY: all build build-frontend build-server build-agent frontend backend run install uninstall test lint dev dev-server dev-frontend clean release
 
 all: build
+
+frontend: build-frontend
+
+backend: build-server
+
+run: build-server
+	@./bin/garund start
 
 build-frontend:
 	@echo "Building Next.js static frontend..."
@@ -33,23 +43,31 @@ build-agent:
 
 build: build-frontend build-server build-agent
 	@echo "\n✓ Garund built successfully at bin/garund"
-	@echo "  Run './bin/garund start' or run 'make install' to copy to ~/.local/bin/garund\n"
+	@echo "  Run './bin/garund start' or run 'make install' to copy to $(BINDIR)/garund\n"
 
 install: build
-	@echo "Installing garund binary to ~/.local/bin..."
-	@mkdir -p $(HOME)/.local/bin
-	@cp bin/garund $(HOME)/.local/bin/garund
-	@echo "\n✓ Garund installed successfully to $(HOME)/.local/bin/garund"
-	@if echo ":$$PATH:" | grep -q ":$(HOME)/.local/bin:"; then \
+	@echo "Installing garund binary to $(BINDIR)..."
+	@mkdir -p $(BINDIR)
+	@cp bin/garund $(BINDIR)/garund
+	@chmod +x $(BINDIR)/garund
+	@echo "\n✓ Garund installed successfully to $(BINDIR)/garund"
+	@if echo ":$$PATH:" | grep -q ":$(BINDIR):"; then \
 		echo "  Run 'garund start' to launch!\n"; \
 	else \
-		echo "\nNotice: ~/.local/bin is not in your current PATH."; \
-		echo "  To run 'garund' directly, add it to your PATH:"; \
-		echo "      export PATH=\"\$$HOME/.local/bin:\$$PATH\"\n"; \
-		echo "  Or install system-wide (requires sudo):"; \
-		echo "      sudo cp bin/garund /usr/local/bin/garund\n"; \
-		echo "  Or run directly using full path:"; \
-		echo "      ~/.local/bin/garund start\n"; \
+		echo "\nNotice: $(BINDIR) is not in your current PATH."; \
+		echo "  To run 'garund' directly in this session and future sessions, export it:"; \
+		echo "      export PATH=\"$(BINDIR):\$$PATH\"\n"; \
+		echo "  Add to your shell profile (~/.bashrc or ~/.zshrc):"; \
+		echo "      echo 'export PATH=\"$(BINDIR):\$$PATH\"' >> ~/.bashrc\n"; \
+	fi
+
+uninstall:
+	@echo "Uninstalling garund binary from $(BINDIR)..."
+	@if [ -f "$(BINDIR)/garund" ]; then \
+		rm -f "$(BINDIR)/garund"; \
+		echo "✓ Removed $(BINDIR)/garund"; \
+	else \
+		echo "Notice: $(BINDIR)/garund not found."; \
 	fi
 
 test:
@@ -84,3 +102,4 @@ release: build-frontend
 
 clean:
 	rm -rf bin/ dist/ internal/web/dist/*
+

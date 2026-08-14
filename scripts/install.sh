@@ -38,12 +38,15 @@ fi
 echo "✓ Detected platform: ${OS}/${ARCH}"
 
 # 3. Determine Installation Path
-if [ -w "/usr/local/bin" ]; then
+if [ -n "$GARUND_INSTALL_DIR" ]; then
+  INSTALL_DIR="$GARUND_INSTALL_DIR"
+elif [ -w "/usr/local/bin" ]; then
   INSTALL_DIR="/usr/local/bin"
 else
   INSTALL_DIR="$HOME/.local/bin"
-  mkdir -p "$INSTALL_DIR"
 fi
+
+mkdir -p "$INSTALL_DIR"
 
 TARGET_BIN="${INSTALL_DIR}/garund"
 if [ "$OS" = "windows" ]; then
@@ -52,30 +55,36 @@ fi
 
 echo "✓ Target installation path: ${TARGET_BIN}"
 
-# 4. Resolve Release URL
-if [ "$VERSION" = "latest" ]; then
-  RELEASE_URL="https://github.com/${REPO}/releases/latest/download/${BINARY_NAME}"
-else
-  RELEASE_URL="https://github.com/${REPO}/releases/download/${VERSION}/${BINARY_NAME}"
-fi
-
+# 4. Resolve Release URL or Local Binary
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-echo "Downloading ${BINARY_NAME}..."
 DOWNLOAD_SUCCESS=0
 
-if command -v curl >/dev/null 2>&1; then
-  if curl -fsSL "$RELEASE_URL" -o "${TMP_DIR}/garund"; then
-    DOWNLOAD_SUCCESS=1
-  fi
-elif command -v wget >/dev/null 2>&1; then
-  if wget -qO "${TMP_DIR}/garund" "$RELEASE_URL"; then
-    DOWNLOAD_SUCCESS=1
-  fi
+if [ -f "bin/garund" ]; then
+  echo "Found local compiled binary at bin/garund. Installing..."
+  cp bin/garund "${TMP_DIR}/garund"
+  DOWNLOAD_SUCCESS=1
 else
-  echo "Error: Neither curl nor wget is available."
-  exit 1
+  if [ "$VERSION" = "latest" ]; then
+    RELEASE_URL="https://github.com/${REPO}/releases/latest/download/${BINARY_NAME}"
+  else
+    RELEASE_URL="https://github.com/${REPO}/releases/download/${VERSION}/${BINARY_NAME}"
+  fi
+
+  echo "Downloading ${BINARY_NAME} from ${RELEASE_URL}..."
+  if command -v curl >/dev/null 2>&1; then
+    if curl -fsSL "$RELEASE_URL" -o "${TMP_DIR}/garund"; then
+      DOWNLOAD_SUCCESS=1
+    fi
+  elif command -v wget >/dev/null 2>&1; then
+    if wget -qO "${TMP_DIR}/garund" "$RELEASE_URL"; then
+      DOWNLOAD_SUCCESS=1
+    fi
+  else
+    echo "Error: Neither curl nor wget is available."
+    exit 1
+  fi
 fi
 
 if [ "$DOWNLOAD_SUCCESS" -ne 1 ]; then
@@ -91,7 +100,7 @@ if [ "$DOWNLOAD_SUCCESS" -ne 1 ]; then
   echo "         git clone https://github.com/${REPO}.git"
   echo "         cd Garund"
   echo "         make build"
-  echo "         cp bin/garund ${TARGET_BIN}"
+  echo "         make install"
   echo ""
   exit 1
 fi
@@ -101,18 +110,29 @@ mv "${TMP_DIR}/garund" "$TARGET_BIN"
 
 echo "✓ Successfully installed Garund to ${TARGET_BIN}"
 
-# 5. PATH check
+# 5. PATH check & export instructions
 case ":$PATH:" in
-  *":${INSTALL_DIR}:"*) ;;
+  *":${INSTALL_DIR}:"*)
+    echo "✓ ${INSTALL_DIR} is in your PATH."
+    ;;
   *)
     echo ""
-    echo "Notice: ${INSTALL_DIR} is not in your PATH."
-    echo "Add it to your profile:"
+    echo "Notice: ${INSTALL_DIR} is not in your current PATH environment variable."
+    echo ""
+    echo "To start using garund right away in your current shell session, export it:"
     echo "    export PATH=\"${INSTALL_DIR}:\$PATH\""
+    echo ""
+    echo "To persist this change for future shell sessions, add it to your profile:"
+    echo "    echo 'export PATH=\"${INSTALL_DIR}:\$PATH\"' >> ~/.bashrc   # for bash"
+    echo "    echo 'export PATH=\"${INSTALL_DIR}:\$PATH\"' >> ~/.zshrc    # for zsh"
+    echo ""
     ;;
 esac
 
 echo ""
-echo "Garund is ready!"
-echo "Run:"
+echo "Garund installation complete!"
+echo "Verify version:"
+echo "    garund version"
+echo ""
+echo "Start Garund:"
 echo "    garund start"

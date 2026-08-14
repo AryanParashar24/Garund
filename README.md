@@ -6,7 +6,7 @@ Garund is a Kubernetes SRE observability and reliability control-plane applicati
 
 ## Core Experience
 
-Install Garund and launch it directly from your terminal:
+Install Garund and launch it directly from your terminal from any directory:
 
 ```bash
 # Start Garund
@@ -23,50 +23,107 @@ No manual Node.js, npm, or Go development commands are required for running the 
 
 ---
 
-## Installation
+## Quick Start Installation
 
-### Installation Script
+### Automated Installer Script
 
-Install the latest pre-compiled binary for your system (`linux`, `darwin`, `windows`):
+Install the pre-compiled binary for your platform (`linux`, `darwin`, `windows`):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AryanParashar24/Garund/master/scripts/install.sh | sh
 ```
 
-### Build & Install from Source
+### PATH Configuration
+
+If `~/.local/bin` is not already in your environment `PATH`, export it in your current terminal session:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+To persist this across future terminal sessions, add it to your shell configuration file:
+
+```bash
+# For bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+
+# For zsh
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+```
+
+Verify your installation:
+
+```bash
+garund version
+```
+
+---
+
+## Build & Install from Source
+
+You can also build and install Garund directly from source:
 
 ```bash
 git clone https://github.com/AryanParashar24/Garund.git
 cd Garund
 
-# Build binary locally into bin/garund
+# Build binary locally into bin/garund (for local development)
 make build
 
-# Install binary to system PATH (~/.local/bin/garund)
+# Install binary to ~/.local/bin/garund
 make install
+```
+
+### System-Wide Installation
+
+To install Garund system-wide (requires appropriate permissions):
+
+```bash
+PREFIX=/usr/local make install
 ```
 
 ---
 
-## CLI Usage
+## Uninstallation
+
+To remove the installed Garund binary while preserving your configuration and telemetry data:
+
+```bash
+# Using Makefile
+make uninstall
+
+# Or using script
+./scripts/uninstall.sh
+```
+
+To completely purge all local configuration, state, and logs (`~/.garund/`):
+
+```bash
+./scripts/uninstall.sh --purge
+```
+
+---
+
+## CLI Usage Reference
 
 Garund includes a supervisor CLI for managing process lifecycles and diagnosing cluster connectivity.
 
 | Command | Description |
 | :--- | :--- |
 | `garund start` | Launch the Garund server and embedded dashboard |
-| `garund status` | Show process status, PID, address, and cluster connection |
+| `garund status` | Show process status, PID, listen address, and Kubernetes connection state |
 | `garund doctor` | Run full environment, permissions, port, and API diagnostics |
 | `garund logs` | Display sanitized application log output |
 | `garund restart` | Gracefully restart the Garund server |
 | `garund stop` | Stop running Garund processes cleanly |
-| `garund version` | Output build version, commit hash, and platform details |
+| `garund version` | Output build version, git commit hash, build date, and platform details |
+| `garund help` | Display CLI usage help |
 
-### Configuration Flags (`garund start`)
+### Configuration Flags (`garund start` / `garund restart`)
 
 * `--host` (default: `127.0.0.1`) - Host address to bind
 * `--port` (default: `8080`) - HTTP port to listen on
-* `--kubeconfig` (default: `~/.kube/config`) - Path to Kubernetes configuration file
+* `--kubeconfig` (default: `~/.kube/config` or `$KUBECONFIG`) - Path to Kubernetes configuration file
 * `--context` - Specific Kubernetes context to target
 * `--prometheus-url` - Custom Prometheus endpoint for SLI evaluation
 
@@ -82,7 +139,7 @@ Garund includes a supervisor CLI for managing process lifecycles and diagnosing 
                          │
              ┌───────────┴───────────┐
              │                       │
-        supervisor               config
+        supervisor               config / state
              │                (~/.garund/)
              ▼
        Garund Runtime
@@ -110,12 +167,16 @@ make dev
 * Backend runs at `http://127.0.0.1:8080`
 * Frontend dev server runs at `http://127.0.0.1:3000`
 
-### Testing & Verification
+### Useful Development Commands
 
 ```bash
-make test    # Run Go unit and integration tests
-make build   # Build production single binary
-make release # Cross-compile distribution binaries into dist/
+make frontend   # Build static frontend output
+make backend    # Build Go CLI binary to bin/garund
+make run        # Build and run ./bin/garund start
+make test       # Run Go unit and integration tests
+make lint       # Run go vet static analysis
+make clean      # Clean build artifacts (bin/, dist/, internal/web/dist/)
+make release    # Cross-compile distribution binaries into dist/
 ```
 
 ---
