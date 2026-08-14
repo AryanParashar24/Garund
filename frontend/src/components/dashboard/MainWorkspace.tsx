@@ -12,6 +12,7 @@ import { LiveEventFeed } from "@/components/events/LiveEventFeed"
 import { ResourceTables } from "@/components/dashboard/ResourceTables"
 import { SearchController } from "@/components/search/SearchController"
 import { SearchResult } from "@/components/search/types"
+import { ExternalLink } from "lucide-react"
 import {
   getPods,
   getOverview,
@@ -299,14 +300,41 @@ export function MainWorkspace() {
           }}
         />
 
-        {/* Search Shortcut Footer */}
-        <footer className="flex items-center justify-center py-6 border-t border-zinc-900">
-          <div className="flex items-center gap-2 text-xs text-zinc-600">
-            <span>Press</span>
-            <kbd className="rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 font-mono text-zinc-400">
-              /
-            </kbd>
-            <span>to search Kubernetes resources across connected workspaces</span>
+        {/* Footer */}
+        <footer className="mt-10 pt-6 pb-4 border-t border-zinc-800/80 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-zinc-400">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-emerald-400 font-medium text-xs shadow-sm">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              Built for Open Source
+            </div>
+
+            <div className="hidden sm:flex items-center gap-2 text-zinc-500">
+              <span>•</span>
+              <span>Press</span>
+              <kbd className="rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 font-mono text-[11px] text-zinc-300 shadow-inner">
+                /
+              </kbd>
+              <span>to search resources across workspaces</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <span className="text-zinc-400 font-medium">Wanna Hire the Creator?</span>
+            <a
+              href="https://www.linkedin.com/in/aryanparashar/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-gradient-to-r from-indigo-950/80 via-zinc-900 to-blue-950/80 px-3 py-1.5 text-xs font-semibold text-indigo-200 hover:text-white hover:border-indigo-400/60 hover:shadow-lg hover:shadow-indigo-500/20 transition-all duration-200 group"
+            >
+              <svg className="h-3.5 w-3.5 fill-indigo-400 group-hover:scale-110 transition-transform" viewBox="0 0 24 24">
+                <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z"/>
+              </svg>
+              <span>Connect here</span>
+              <ExternalLink className="h-3 w-3 text-indigo-400/70 group-hover:translate-x-0.5 transition-transform" />
+            </a>
           </div>
         </footer>
       </div>

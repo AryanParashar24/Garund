@@ -226,3 +226,4 @@ make release    # Cross-compile distribution binaries into dist/
 * **Localhost Binding**: Garund binds to `127.0.0.1` by default to prevent unauthorized network exposure.
 * **SSRF Protection**: Strict URL validation and IP blocklists prevent server-side request forgery during webhook and alert routing.
 * **Secret Redaction**: Kubeconfig credentials, auth headers, and API tokens are automatically sanitized in log output.
+
