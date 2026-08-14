@@ -72,25 +72,7 @@ No manual Node.js, npm, or Go development commands are required for running the 
 
 ## Installation
 
-Choose one of the following installation methods:
-
-### Option 1: Automated One-Line Installer Script
-
-Install Garund directly via shell installer script (downloads pre-compiled release binary or automatically compiles from source fallback if releases are not yet published):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/AryanParashar24/Garund/master/scripts/install.sh | sh
-```
-
-Then export `~/.local/bin` to your current PATH session:
-
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
-
----
-
-### Option 2: Build & Install from Source (Git Clone)
+### Build & Install from Source (Git Clone)
 
 Clone the repository and install the `garund` binary to `~/.local/bin`:
 
