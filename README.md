@@ -1,4 +1,4 @@
-# Garund
+# <img src="garund.png" alt="Garund Logo" width="40" height="40" style="vertical-align: middle; display: inline-block; margin-right: 8px;" /> Garund
 
 Garund is a Kubernetes SRE observability and reliability control-plane application. It provides real-time workload discovery, topology mapping, synthetic reliability probing, SLI/SLO/SLA management, PromQL-based reliability evaluation, error budget calculations, and multi-channel alert routing.
 

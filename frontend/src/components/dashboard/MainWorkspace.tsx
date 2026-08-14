@@ -81,7 +81,12 @@ export function MainWorkspace() {
         <header className="flex flex-col gap-4 border-b border-zinc-800/80 pb-5 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-3">
-              <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+              <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2.5">
+                <img
+                  src="/garund.png"
+                  alt="Garund Logo"
+                  className="h-8 w-8 object-contain rounded-md"
+                />
                 <span className="bg-gradient-to-r from-emerald-400 to-teal-200 bg-clip-text text-transparent">
                   Garund
                 </span>
