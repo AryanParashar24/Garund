@@ -85,7 +85,7 @@ export function MainWorkspace() {
                 <img
                   src="/garund.png"
                   alt="Garund Logo"
-                  className="h-8 w-8 object-contain rounded-md"
+                  className="h-18 w-18 object-contain rounded-md"
                 />
                 <span className="bg-gradient-to-r from-emerald-400 to-teal-200 bg-clip-text text-transparent">
                   Garund

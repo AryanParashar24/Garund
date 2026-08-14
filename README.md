@@ -1,6 +1,46 @@
-# <img src="garund.png" alt="Garund Logo" width="40" height="40" style="vertical-align: middle; display: inline-block; margin-right: 8px;" /> Garund
+# Garund
 
-Garund is a Kubernetes SRE observability and reliability control-plane application. It provides real-time workload discovery, topology mapping, synthetic reliability probing, SLI/SLO/SLA management, PromQL-based reliability evaluation, error budget calculations, and multi-channel alert routing.
+Garund is a Kubernetes SRE observability and reliability control-plane application. It provides real-time workload discovery, interactive resource topology mapping, synthetic reliability probing, SLI/SLO/SLA management, PromQL-based reliability evaluation, error budget calculations, and multi-channel alert routing.
+
+---
+
+## Key Features & Capabilities
+
+### Interactive Resource Topology View
+Garund dynamically constructs a live 2D dependency graph of your Kubernetes clusters:
+* **Full Hierarchy Mapping**: Visualizes relationships across **Services → Deployments → ReplicaSets → Pods** in real time.
+* **Instant Resource Inspection**: Click on any workload node in the graph to view live pod logs, container status, configuration manifests, and warning events.
+* **Global Search Integration**: Press `/` to search for any resource across namespaces; selecting a result automatically highlights and centers the node in the topology graph.
+* **Cascading Failure Isolation**: Visually track degraded pods and failing ReplicaSets to trace root-cause incidents across microservice boundaries.
+
+### Live Cluster Event Stream & Warning Flagging
+Garund continuously monitors and flags cluster events in real time:
+* **Real-Time Event Stream**: Streams live Kubernetes cluster audit and state events across all namespaces.
+* **Incident Flagging**: Automatically highlights critical failure patterns, including `CrashLoopBackOff`, `OOMKilled`, `ImagePullBackOff`, `Unhealthy` probes, and `FailedScheduling`.
+* **Actionable Diagnostics**: Displays precise event timestamps, namespace scopes, resource actions, and raw failure context for rapid incident response.
+
+###  Automated Resource Health Detection & Timestamp Tracking
+Comprehensive workload health scoring and lifecycle tracking:
+* **Dynamic Cluster Health Score**: Continuously evaluates a unified Cluster Health Score (0–100%) calculated dynamically from workload crash loops, pod restarts, and event severities.
+* **Timestamped Lifecycles**: Tracks creation timestamps, age/uptime durations, last-seen timestamps, and restart counts across all Pods, Deployments, ReplicaSets, and Services.
+* **Status Categorization**: Automatically categorizes resources into healthy, degraded, and failed states for immediate visual identification.
+
+### PromQL Integration & Guided SLI Builder (No PromQL Knowledge Required)
+Garund integrates directly with Prometheus telemetry to measure workload reliability, while making Service Level Indicators (SLIs) accessible to every team member:
+* **No PromQL Required**: If you don't know PromQL, Garund's **Guided SLI Builder** allows you to configure reliability targets visually. Simply select your service, desired measurement type (*Availability %*, *Error Rate %*, *Latency ms*, *Throughput req/s*), and percentile (*p50*, *p90*, *p95*, *p99*). Garund handles the query generation automatically.
+* **Advanced PromQL Support**: For teams with existing Prometheus expertise, input custom PromQL queries with live syntax validation and test execution.
+* **Query Explainability**: Every generated or custom PromQL query includes a plain-English explainability drawer, breaking down exactly how metrics and rates are calculated.
+* **Truthful Telemetry Guarantees**: Garund never fabricates health data or defaults to fake green indicators. If telemetry is unreachable or returned empty, Garund reports state as `N/A (Unavailable)`.
+
+### Telemetry & OpenTelemetry (OTel) Integration
+Unified telemetry pipeline for infrastructure and application performance:
+* **Prometheus & OTel Collectors**: Directly ingests metrics from Prometheus endpoints and OpenTelemetry collectors.
+* **Telemetry Correlation**: Links cluster infrastructure metrics directly with synthetic HTTP/TCP/gRPC probes and application-level SLI/SLO measurements.
+
+### SLI/SLO/SLA Management & Error Budget Engine
+* **Error Budget & Burn Rate**: Continuously calculates remaining error budgets and alert burn rates across 5-minute to 24-hour evaluation windows.
+* **Multi-Channel Alerting**: Connects with Webhooks, Prometheus Alertmanager, and PagerDuty with strict SSRF protection.
+* **Multi-Cluster Workspaces**: Manage local Kubernetes contexts and remote in-cluster agents from a unified control plane.
 
 ---
 
