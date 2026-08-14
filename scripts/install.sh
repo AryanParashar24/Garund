@@ -2,6 +2,7 @@
 set -e
 
 REPO="${GARUND_REPO:-AryanParashar24/Garund}"
+BRANCH="${GARUND_BRANCH:-master}"
 VERSION="${GARUND_VERSION:-latest}"
 
 echo "Garund Installer"
@@ -55,7 +56,7 @@ fi
 
 echo "✓ Target installation path: ${TARGET_BIN}"
 
-# 4. Resolve Release URL or Local Binary
+# 4. Resolve Release URL, Local Binary, or Source Fallback
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -72,35 +73,66 @@ else
     RELEASE_URL="https://github.com/${REPO}/releases/download/${VERSION}/${BINARY_NAME}"
   fi
 
-  echo "Downloading ${BINARY_NAME} from ${RELEASE_URL}..."
+  echo "Attempting to download ${BINARY_NAME}..."
   if command -v curl >/dev/null 2>&1; then
-    if curl -fsSL "$RELEASE_URL" -o "${TMP_DIR}/garund"; then
+    if curl -fsSL "$RELEASE_URL" -o "${TMP_DIR}/garund" 2>/dev/null; then
       DOWNLOAD_SUCCESS=1
     fi
   elif command -v wget >/dev/null 2>&1; then
-    if wget -qO "${TMP_DIR}/garund" "$RELEASE_URL"; then
+    if wget -qO "${TMP_DIR}/garund" "$RELEASE_URL" 2>/dev/null; then
       DOWNLOAD_SUCCESS=1
     fi
-  else
-    echo "Error: Neither curl nor wget is available."
-    exit 1
+  fi
+
+  # Source build fallback if release download returns 404/fails
+  if [ "$DOWNLOAD_SUCCESS" -ne 1 ]; then
+    echo "Notice: Release asset '${BINARY_NAME}' not found on GitHub Releases."
+    if command -v go >/dev/null 2>&1; then
+      echo "Go toolchain detected ($(go version | awk '{print $3}')). Building Garund from repository source..."
+      
+      SRC_DIR="${TMP_DIR}/src"
+      mkdir -p "$SRC_DIR"
+      
+      TARBALL_URL="https://github.com/${REPO}/archive/refs/heads/${BRANCH}.tar.gz"
+      echo "Fetching repository archive (${BRANCH})..."
+      
+      BUILD_OK=0
+      if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$TARBALL_URL" | tar -xz -C "$SRC_DIR" --strip-components=1 2>/dev/null && BUILD_OK=1
+      elif command -v wget >/dev/null 2>&1; then
+        wget -qO- "$TARBALL_URL" | tar -xz -C "$SRC_DIR" --strip-components=1 2>/dev/null && BUILD_OK=1
+      fi
+
+      if [ "$BUILD_OK" -eq 1 ] && [ -d "$SRC_DIR" ]; then
+        echo "Compiling Garund binary..."
+        (
+          cd "$SRC_DIR"
+          go build -o "${TMP_DIR}/garund" ./main.go
+        )
+        if [ -f "${TMP_DIR}/garund" ]; then
+          DOWNLOAD_SUCCESS=1
+          echo "✓ Successfully compiled Garund from source."
+        fi
+      fi
+    fi
   fi
 fi
 
 if [ "$DOWNLOAD_SUCCESS" -ne 1 ]; then
   echo ""
-  echo "Error: Could not download pre-compiled binary '${BINARY_NAME}' from GitHub Releases."
+  echo "Error: Could not install Garund."
   echo ""
   echo "Why this happened:"
-  echo "  No GitHub Release assets exist yet under https://github.com/${REPO}/releases."
+  echo "  1. Pre-compiled release assets for '${BINARY_NAME}' are not yet published on GitHub Releases."
+  echo "  2. Go development toolchain ('go') was not found on this system to perform automatic compilation."
   echo ""
   echo "To resolve:"
-  echo "  1. Publish a GitHub Release (e.g. tag 'v0.1.0'), OR"
-  echo "  2. Build from source locally:"
-  echo "         git clone https://github.com/${REPO}.git"
-  echo "         cd Garund"
-  echo "         make build"
-  echo "         make install"
+  echo "  Build & install manually from source:"
+  echo "      git clone https://github.com/${REPO}.git"
+  echo "      cd Garund"
+  echo "      make build"
+  echo "      make install"
+  echo "      export PATH=\"\$HOME/.local/bin:\$PATH\""
   echo ""
   exit 1
 fi

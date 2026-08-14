@@ -23,25 +23,60 @@ No manual Node.js, npm, or Go development commands are required for running the 
 
 ---
 
-## Quick Start Installation
+## Installation
 
-### Automated Installer Script
+Choose one of the following installation methods:
 
-Install the pre-compiled binary for your platform (`linux`, `darwin`, `windows`):
+### Option 1: Automated One-Line Installer Script
+
+Install Garund directly via shell installer script (downloads pre-compiled release binary or automatically compiles from source fallback if releases are not yet published):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AryanParashar24/Garund/master/scripts/install.sh | sh
 ```
 
-### PATH Configuration
-
-If `~/.local/bin` is not already in your environment `PATH`, export it in your current terminal session:
+Then export `~/.local/bin` to your current PATH session:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-To persist this across future terminal sessions, add it to your shell configuration file:
+---
+
+### Option 2: Build & Install from Source (Git Clone)
+
+Clone the repository and install the `garund` binary to `~/.local/bin`:
+
+```bash
+git clone https://github.com/AryanParashar24/Garund.git
+cd Garund
+
+# Build static frontend & Go binary
+make build
+
+# Install binary to ~/.local/bin/garund
+make install
+
+# Add to PATH for current session
+export PATH="$HOME/.local/bin:$PATH"
+
+# Launch Garund
+garund start
+```
+
+### System-Wide Installation
+
+To install system-wide to `/usr/local/bin`:
+
+```bash
+PREFIX=/usr/local make install
+```
+
+---
+
+## Environment & PATH Setup
+
+To ensure `garund` is available in every new terminal session, add `~/.local/bin` to your shell profile:
 
 ```bash
 # For bash
@@ -55,31 +90,7 @@ Verify your installation:
 
 ```bash
 garund version
-```
-
----
-
-## Build & Install from Source
-
-You can also build and install Garund directly from source:
-
-```bash
-git clone https://github.com/AryanParashar24/Garund.git
-cd Garund
-
-# Build binary locally into bin/garund (for local development)
-make build
-
-# Install binary to ~/.local/bin/garund
-make install
-```
-
-### System-Wide Installation
-
-To install Garund system-wide (requires appropriate permissions):
-
-```bash
-PREFIX=/usr/local make install
+garund doctor
 ```
 
 ---
